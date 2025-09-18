@@ -11,7 +11,7 @@ boards = [board.Board(BOARD_SIZE) for x in range(POPULATION_SIZE)]
 
 while not problem_solved:
     # Select best solutions
-    boards.sort(key=lambda board: board.number_of_attacks)
+    boards.sort(key=lambda board: board.number_of_non_attacks, reverse=True)
 
     for board in boards:
         print(board.state, f"No. Attacks: {board.number_of_attacks}",
@@ -21,7 +21,7 @@ while not problem_solved:
         problem_solved = True
         break
 
-    evolutionary.roulette_wheel_selection(boards)
+    evolutionary.roulette_wheel_selection(boards, SELECTION_SIZE)
 
     # Cross-over and mutate
 
