@@ -12,3 +12,6 @@ boards = [board.Board(board_size) for x in range(population_size)]
 
 for board in boards:
     print(board.state, board.number_of_attacks)
+
+visual_table = []
+
