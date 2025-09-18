@@ -28,7 +28,8 @@ class Board:
             non_attack_count += (self.size - 1 - i - attack_count)
 
         self.number_of_attacks = total_attack_count
-        self.number_of_non_attacks = (self.size * (self.size / 2 - 0.5)) if self.size % 2 else 0
+        self.number_of_non_attacks = (
+            (self.size - 1) * (self.size / 2)) - total_attack_count
 
     def __init__(self, size):
         self.size = size
