@@ -1,32 +1,17 @@
-from constants import BOARD_SIZE
-from app import boards
-###############################################################
-## INIT FUNCTIONS
-## Fills the table with
-def fill_table():
-    table = []
-    for i in range(BOARD_SIZE):
-        # Create a new list for each row
-        row = [" "] * BOARD_SIZE
-        table.append(row)
-    return table
-## reads the board and writes queens where its required 
-def get_table (board, table):
-  
-    for i in range(BOARD_SIZE):
-        table[board.state[i]][i] = "Q"
-    return table
-#####################################################################################
-## Primitive visuals 
-## Cheks the visual board in the console 
-def print_console_table (table):
-
-    for i in range(BOARD_SIZE):
-        print(table[i])
-#####################################################################################
-
-
-visual_table = fill_table()
-visual_table = get_table(boards[1], visual_table)
-print_console_table(visual_table)
-            
+def print_board_box(board, title=None):
+    """Pretty console board using box-drawing characters."""
+    n = board.size
+    if title:
+        print("\n" + title)
+    # top border
+    print("┌" + "───┬" * (n - 1) + "───┐")
+    for r in range(n):
+        row_cells = []
+        for c in range(n):
+            row_cells.append("👑 " if board.state[c] == r else "   ")
+        print("│" + "│".join(row_cells) + "│")
+        if r != n - 1:
+            print("├" + "───┼" * (n - 1) + "───┤")
+    # bottom border
+    print("└" + "───┴" * (n - 1) + "───┘")
+    print(f"Attacks: {board.number_of_attacks} | Fitness: {board.fitness()} / {board.max_non_attacking_pairs()}")
