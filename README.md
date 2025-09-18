@@ -9,7 +9,7 @@
 Assignment for Artificial Intelligence HT2025
 
 ## Assignment report aspects 
-# THe problem :
+# The problem :
 The N-queen puzzle . Size of N will change and we measure the minimal steps required to reach a solution 
 # the algorithm design (i.e., representation, fitness function, operations, parameter values ect ) 
 We can derive a lot of our fitness function and parameter values in the constants.py section 
