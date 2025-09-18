@@ -3,7 +3,7 @@
 ## Authors | studentID :
 * Ahmed Hussein huah21vn
 * Julius Noren noju22ez
-* Hannan Khalil
+* Hannan Khalil khha22zo
 * Yijiao Yang yayi25ty
 * Adrian Sandström Saad25nx \
 Assignment for Artificial Intelligence HT2025
