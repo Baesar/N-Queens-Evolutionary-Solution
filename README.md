@@ -5,5 +5,5 @@
 * Julius Noren noju22ez
 * Hannan Khalil
 * Yijiao Yang yayi25ty
-* Collaborator 5 \
+* Adrian Sandstrom Saad25nx \
 Assignment for Artificial Intelligence HT2025
