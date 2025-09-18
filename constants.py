@@ -1,4 +1,4 @@
-# Problem constants 
+# Problem constants
 BOARD_SIZE = 8   # Board size (try 8, 20, 50...)
 
 # Evolutionary constants
