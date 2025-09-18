@@ -1,19 +1,13 @@
 import board
 import evolutionary
-
-# Problem constants
-board_size = 8
-
-# Evolutionary constants
-population_size = 10  # board_size**2
-mutation_rate = 0.1
-
+import sys
+from constants import *
 problem_solved = False
 generation = 0
-maximum_generations = board_size**3
+maximum_generations = BOARD_SIZE**3
 
 # Initialize first generation's samples
-boards = [board.Board(board_size) for x in range(population_size)]
+boards = [board.Board(BOARD_SIZE) for x in range(POPULATION_SIZE)]
 
 while not problem_solved:
     # Select best solutions
