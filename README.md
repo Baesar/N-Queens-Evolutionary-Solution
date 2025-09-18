@@ -5,7 +5,7 @@ Assignment for Artificial Intelligence HT2025
 * Julius Noren noju22ez
 * Hannan Khalil khha22zo
 * Yijiao Yang yayi25ty
-* Adrian Sandström Saad25nx \
+* Adrian Sandström Saad25nx
 
 ## Assignment report aspects 
 # The problem :
