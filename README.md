@@ -33,3 +33,8 @@ results from the experimentation saved in a text file.
 # a zip 
 file containing the source code for implementing a solution of an optimization
 problem and the executable files.
+
+
+## NOTES
+Agisim and tracers for inside of the solution 
+Bacteria maze solution 
