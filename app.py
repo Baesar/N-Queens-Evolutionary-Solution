@@ -20,7 +20,7 @@ while not problem_solved:
         problem_solved = True
         break
 
-    evolutionary.roulette_wheel_selection(boards)
+    evolutionary.roulette_wheel_selection(boards, SELECTION_SIZE)
 
     # Cross-over and mutate
 

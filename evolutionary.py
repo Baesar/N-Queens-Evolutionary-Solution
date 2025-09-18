@@ -1,11 +1,12 @@
 from random import random
+from math import floor
 
 
 def roulette_wheel_selection(boards, selection_size):
     boards_copy = boards
     selected_boards = []
 
-    for x in range((len(boards_copy) * selection_size).__floor__):
+    for x in range(int((len(boards_copy) * selection_size))):
         sum = 0
         for board in boards_copy:
             sum += board.number_of_non_attacks
@@ -16,12 +17,14 @@ def roulette_wheel_selection(boards, selection_size):
             proportions[i] = board.number_of_non_attacks / \
                 sum + (proportions[i - 1] if i != 0 else 0)
 
-        print(proportions)
+        print(proportions, "\n")
 
         random_number = random()
 
         for i, state in enumerate(proportions):
             if state >= random_number:
+                print(
+                    f"Random number = {random_number}\nSelected board: {i} {boards_copy[i].state}\n\n")
                 selected_boards.append(boards_copy[i])
                 boards_copy.pop(i)
                 break
