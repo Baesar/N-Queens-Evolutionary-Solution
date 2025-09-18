@@ -1,9 +1,9 @@
-# Problem constants 
-BOARD_SIZE = 8   
+# Problem constants
+BOARD_SIZE = 9
 
 # Evolutionary constants
-POPULATION_SIZE = 200
-GENERATIONS = 5000
+POPULATION_SIZE = 10
+MAXIMUM_GENERATIONS = BOARD_SIZE**3
 ELITISM = 2
 TOURNAMENT_K = 4
 CROSSOVER_RATE = 0.9

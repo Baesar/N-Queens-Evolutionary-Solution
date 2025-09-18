@@ -2,9 +2,9 @@ import board
 import evolutionary
 import sys
 from constants import *
+
 problem_solved = False
 generation = 0
-maximum_generations = BOARD_SIZE**3
 
 # Initialize first generation's samples
 boards = [board.Board(BOARD_SIZE) for x in range(POPULATION_SIZE)]
