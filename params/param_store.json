@@ -1,0 +1,23 @@
+{
+  "total_runs": 1000,
+  "boards": {
+    "8": {
+      "trained_runs": 1000,
+      "best_settings": {
+        "population_size": 215,
+        "generations": 1010,
+        "elitism": 2,
+        "tournament_k": 4,
+        "crossover_rate": 0.7748477049666044,
+        "mutation_rate": 0.09381353576563557
+      },
+      "best_metrics": {
+        "median_duration": 0.03366522950818762,
+        "success_rate": 1.0,
+        "avg_generations": 10.3,
+        "avg_fitness": 28.0
+      }
+    }
+  },
+  "last_updated": "2025-09-20 23:44:27"
+}
