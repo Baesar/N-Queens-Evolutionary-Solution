@@ -2,7 +2,7 @@ from random import randint
 
 
 class Board:
-    def calculate_number_of_attacks(self):
+    def update_number_of_attacks(self):
         attack_count = 0
         non_attack_count = 0
         total_attack_count = 0
@@ -35,4 +35,4 @@ class Board:
         self.size = size
         self.state = state if state != None else [
             randint(0, self.size - 1) for _ in range(size)]
-        self.calculate_number_of_attacks()
+        self.update_number_of_attacks()

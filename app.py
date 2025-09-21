@@ -1,7 +1,7 @@
-from random import randint
+from random import randint, random
 
 import board as board_module
-import evolutionary
+from Evolutionary import selection, genetic_operators
 from constants import *
 
 
@@ -18,9 +18,9 @@ for rep in range(REPETITIONS):
         generation += 1
 
         for board in boards:
-            board.calculate_number_of_attacks()
+            board.update_number_of_attacks()
 
-        # Select best solutions
+        # Sort solutions (best first)
         boards.sort(key=lambda board: board.number_of_attacks)
 
         if not generation % 50:
@@ -28,6 +28,7 @@ for rep in range(REPETITIONS):
             print(
                 f"Best solution: {boards[0].state} {boards[0].number_of_attacks}\n")
 
+        # Check if solution is found
         if boards[0].number_of_attacks == 0:
             total_generations += generation
             problem_solved = True
@@ -35,7 +36,8 @@ for rep in range(REPETITIONS):
                 f"Solution found at after {generation} generations: {boards[0].state}")
             break
 
-        selected_boards = evolutionary.roulette_wheel_selection(
+        # Select boards to be used for recombination
+        selected_boards = selection.roulette_wheel_selection(
             boards, SELECTION_SIZE)
 
         n = len(selected_boards)
@@ -51,7 +53,7 @@ for rep in range(REPETITIONS):
 
         # Cross-over and mutate
         for parent_1, parent_2 in cross_over_parent_pairs:
-            child_1_state, child_2_state = evolutionary.one_point_crossover(
+            child_1_state, child_2_state = genetic_operators.one_point_crossover(
                 parent_1, parent_2)
             if len(child_states) == POPULATION_SIZE - 1:
                 child_states.append(child_1_state)
@@ -61,7 +63,7 @@ for rep in range(REPETITIONS):
         children = [board_module.Board(BOARD_SIZE, child_state)
                     for child_state in child_states]
 
-        children = [evolutionary.mutate(child, MUTATION_RATE)
+        children = [genetic_operators.mutate(child) if random() < MUTATION_RATE else child
                     for child in children]
 
         boards = children
