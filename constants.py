@@ -15,10 +15,10 @@ POPULATION_SIZE = 150
 MAXIMUM_GENERATIONS = BOARD_SIZE**3
 
 # The proportion of solutions to proceed to recombination
-SELECTION_SIZE = 0.2
+SELECTION_SIZE = 0.3
 
 # The rate at which solutions mutate
-MUTATION_RATE = 1
+MUTATION_RATE = 0.4
 
 
 #####################
@@ -26,7 +26,7 @@ MUTATION_RATE = 1
 #####################
 
 # The amount of times the algorithm is run
-REPETITIONS = 25
+REPETITIONS = 100
 
 # wall-clock time limit (in seconds)
 TIME_LIMIT_S = None

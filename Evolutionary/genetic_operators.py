@@ -1,6 +1,29 @@
 from random import randint
 
 
+def pair_parents(parents, amount):
+    """Creates an amount of parent pairs.
+
+    Args:
+        parents: A list of parents.
+        amount: The amount of pairs to be created.
+
+    Returns:
+        A list of parent pairs.
+    """
+
+    parent_pairs = []
+
+    while len(parent_pairs) < amount:
+        parent_2 = parents[randint(0, len(parents) - 1)]
+        parent_1 = parents[randint(0, len(parents) - 1)]
+        if parent_2 == parent_1:
+            continue
+        parent_pairs.append((parent_1, parent_2))
+
+    return parent_pairs
+
+
 def one_point_crossover(parent_1, parent_2):
     """Combines two parents by choosing a random cross-over point.
 
@@ -9,7 +32,7 @@ def one_point_crossover(parent_1, parent_2):
         parent_2: Second parent.
 
     Returns:
-        Two new children
+        Two new children.
     """
 
     crossover_point = randint(1, parent_1.size - 2)
