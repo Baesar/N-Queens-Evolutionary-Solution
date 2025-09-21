@@ -23,7 +23,7 @@ class Board:
 
         self.number_of_attacks = attack_count
 
-    def __init__(self, size):
+    def __init__(self, size=8):
         self.size = size
         self.state = [randint(0, self.size - 1) for x in range(self.size)]
         self.calculate_number_of_attacks()
