@@ -1,23 +1,258 @@
 {
-  "total_runs": 1000,
+  "total_runs": 218368,
   "boards": {
     "8": {
-      "trained_runs": 1000,
+      "trained_runs": 51150,
       "best_settings": {
-        "population_size": 215,
-        "generations": 1010,
-        "elitism": 2,
-        "tournament_k": 4,
-        "crossover_rate": 0.7748477049666044,
-        "mutation_rate": 0.09381353576563557
+        "population_size": 119,
+        "generations": 1230,
+        "elitism": 14,
+        "tournament_k": 15,
+        "crossover_rate": 0.79689138536055,
+        "mutation_rate": 0.02
       },
       "best_metrics": {
-        "median_duration": 0.03366522950818762,
+        "median_duration": 0.03987962449900806,
         "success_rate": 1.0,
-        "avg_generations": 10.3,
-        "avg_fitness": 28.0
+        "avg_generations": 6.294117647058823,
+        "avg_fitness": 28.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "4": {
+      "trained_runs": 15096,
+      "best_settings": {
+        "population_size": 80,
+        "generations": 489,
+        "elitism": 19,
+        "tournament_k": 16,
+        "crossover_rate": 0.8216332842086723,
+        "mutation_rate": 0.16468874933091676
+      },
+      "best_metrics": {
+        "median_duration": 0.000716750044375658,
+        "success_rate": 1.0,
+        "avg_generations": 1.5294117647058822,
+        "avg_fitness": 6.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "5": {
+      "trained_runs": 30090,
+      "best_settings": {
+        "population_size": 60,
+        "generations": 864,
+        "elitism": 35,
+        "tournament_k": 20,
+        "crossover_rate": 0.7000279595612524,
+        "mutation_rate": 0.2145325342556211
+      },
+      "best_metrics": {
+        "median_duration": 0.0011067499872297049,
+        "success_rate": 1.0,
+        "avg_generations": 2.7058823529411766,
+        "avg_fitness": 10.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "6": {
+      "trained_runs": 35020,
+      "best_settings": {
+        "population_size": 177,
+        "generations": 811,
+        "elitism": 16,
+        "tournament_k": 12,
+        "crossover_rate": 0.9338216929506116,
+        "mutation_rate": 0.02
+      },
+      "best_metrics": {
+        "median_duration": 0.021502937481272966,
+        "success_rate": 1.0,
+        "avg_generations": 3.7941176470588234,
+        "avg_fitness": 15.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "7": {
+      "trained_runs": 40120,
+      "best_settings": {
+        "population_size": 96,
+        "generations": 1229,
+        "elitism": 39,
+        "tournament_k": 33,
+        "crossover_rate": 0.8276388467301337,
+        "mutation_rate": 0.08034974488531227
+      },
+      "best_metrics": {
+        "median_duration": 0.016549875028431416,
+        "success_rate": 1.0,
+        "avg_generations": 4.470588235294118,
+        "avg_fitness": 21.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "15": {
+      "trained_runs": 11668,
+      "best_settings": {
+        "population_size": 146,
+        "generations": 824,
+        "elitism": 9,
+        "tournament_k": 14,
+        "crossover_rate": 0.7789073672350653,
+        "mutation_rate": 0.02
+      },
+      "best_metrics": {
+        "median_duration": 0.6437207294511609,
+        "success_rate": 1.0,
+        "avg_generations": 25.08823529411765,
+        "avg_fitness": 105.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "9": {
+      "trained_runs": 20060,
+      "best_settings": {
+        "population_size": 67,
+        "generations": 1298,
+        "elitism": 18,
+        "tournament_k": 33,
+        "crossover_rate": 0.8164443071928423,
+        "mutation_rate": 0.021622580661420768
+      },
+      "best_metrics": {
+        "median_duration": 0.03154452098533511,
+        "success_rate": 1.0,
+        "avg_generations": 15.088235294117647,
+        "avg_fitness": 36.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "10": {
+      "trained_runs": 10846,
+      "best_settings": {
+        "population_size": 83,
+        "generations": 1899,
+        "elitism": 13,
+        "tournament_k": 8,
+        "crossover_rate": 0.7663193977618504,
+        "mutation_rate": 0.02
+      },
+      "best_metrics": {
+        "median_duration": 0.11283625056967139,
+        "success_rate": 1.0,
+        "avg_generations": 34.3235294117647,
+        "avg_fitness": 45.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "11": {
+      "trained_runs": 170,
+      "best_settings": {
+        "population_size": 77,
+        "generations": 2053,
+        "elitism": 9,
+        "tournament_k": 7,
+        "crossover_rate": 0.7262918100480749,
+        "mutation_rate": 0.09597291182160214
+      },
+      "best_metrics": {
+        "median_duration": 0.3981632915092632,
+        "success_rate": 1.0,
+        "avg_generations": 110.55882352941177,
+        "avg_fitness": 55.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "12": {
+      "trained_runs": 816,
+      "best_settings": {
+        "population_size": 71,
+        "generations": 2320,
+        "elitism": 8,
+        "tournament_k": 5,
+        "crossover_rate": 0.7280191253115952,
+        "mutation_rate": 0.05634816353666783
+      },
+      "best_metrics": {
+        "median_duration": 0.29264808347215876,
+        "success_rate": 1.0,
+        "avg_generations": 39.470588235294116,
+        "avg_fitness": 66.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "14": {
+      "trained_runs": 1020,
+      "best_settings": {
+        "population_size": 132,
+        "generations": 847,
+        "elitism": 18,
+        "tournament_k": 14,
+        "crossover_rate": 0.6688571668278077,
+        "mutation_rate": 0.020566259889455703
+      },
+      "best_metrics": {
+        "median_duration": 0.49573958350811154,
+        "success_rate": 1.0,
+        "avg_generations": 30.470588235294116,
+        "avg_fitness": 91.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "16": {
+      "trained_runs": 1020,
+      "best_settings": {
+        "population_size": 164,
+        "generations": 821,
+        "elitism": 11,
+        "tournament_k": 8,
+        "crossover_rate": 0.8221945460916485,
+        "mutation_rate": 0.02
+      },
+      "best_metrics": {
+        "median_duration": 1.246587332978379,
+        "success_rate": 1.0,
+        "avg_generations": 36.23529411764706,
+        "avg_fitness": 120.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "17": {
+      "trained_runs": 1020,
+      "best_settings": {
+        "population_size": 172,
+        "generations": 773,
+        "elitism": 15,
+        "tournament_k": 8,
+        "crossover_rate": 0.8821796496507573,
+        "mutation_rate": 0.02
+      },
+      "best_metrics": {
+        "median_duration": 1.5124270624364726,
+        "success_rate": 1.0,
+        "avg_generations": 40.26470588235294,
+        "avg_fitness": 136.0,
+        "avg_attacks": 0.0
+      }
+    },
+    "18": {
+      "trained_runs": 272,
+      "best_settings": {
+        "population_size": 168,
+        "generations": 854,
+        "elitism": 15,
+        "tournament_k": 6,
+        "crossover_rate": 0.9302624528938847,
+        "mutation_rate": 0.026109683098891893
+      },
+      "best_metrics": {
+        "median_duration": 2.6066698954673484,
+        "success_rate": 1.0,
+        "avg_generations": 49.26470588235294,
+        "avg_fitness": 153.0,
+        "avg_attacks": 0.0
       }
     }
   },
-  "last_updated": "2025-09-20 23:44:27"
+  "last_updated": "2025-09-22 09:10:07"
 }
