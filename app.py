@@ -1,12 +1,13 @@
 import argparse
+
+import json
+import csv
 import os
+import concurrent.futures as cf
 import time
 import random
-from dataclasses import dataclass, asdict, field
-from datetime import datetime
-from pathlib import Path
+from statistics import median
 from typing import List, Tuple, Optional
-
 from board import Board
 from constants import (
     BOARD_SIZE,
@@ -18,49 +19,83 @@ from constants import (
     MUTATION_RATE,
     TIME_LIMIT_S,
     recommend_params,
+    PARAM_STORE_PATH,
+    SOLVE_REPEATS,
+    TRAIN_BATCH_RUNS,
+    TRAIN_KILO_DEFAULT,
+    get_run_defaults,
+    TRAIN_MULTI_DEFAULT,
+    EXPLORE_PROB_START,
+    EXPLORE_PROB_MIN,
+    EXPLORE_PROB_MAX,
+    EXPLORE_PROB_REWARD,
+    EXPLORE_PROB_COOL,
+    ACCEPT_MEDIAN_IMPROVEMENT,
+    ACCEPT_ATTACKS_IMPROVEMENT,
+    ADAPT_EVERY_GEN,
+    ADAPT_NEAR_THRESHOLD,
+    ADAPT_FAR_THRESHOLD,
+    ADAPT_MUT_STEP_UP,
+    ADAPT_MUT_STEP_DOWN,
+    MAX_ELITISM_FRAC,
+    IMMIGRANT_FRAC,
+    REPAIR_BASE_STEPS,
+    REPAIR_MAX_FRAC,
+    PATIENCE_MULTIPLIER,
+    SOFT_RESTART_FRAC,
+    STORE_CHECKPOINT_BATCHES,
+    DYN_TIME_ENABLED_DEFAULT,
+    DYN_TIME_BASE_S,
+    DYN_TIME_MIN_S,
+    DYN_TIME_MAX_S,
+    DYN_TIME_EXTEND_S,
+    DYN_TIME_SHRINK_S,
 )
 import view
 
 
-@dataclass
+
+# ---------------------------
+# GA configuration structures
+# ---------------------------
+
 class GASettings:
-    population_size: int = POPULATION_SIZE
-    generations: int = GENERATIONS
-    elitism: int = ELITISM
-    tournament_k: int = TOURNAMENT_K
-    crossover_rate: float = CROSSOVER_RATE
-    mutation_rate: float = MUTATION_RATE
+    def __init__(
+        self,
+        population_size: int = POPULATION_SIZE,
+        generations: int = GENERATIONS,
+        elitism: int = ELITISM,
+        tournament_k: int = TOURNAMENT_K,
+        crossover_rate: float = CROSSOVER_RATE,
+        mutation_rate: float = MUTATION_RATE,
+    ) -> None:
+        self.population_size = int(population_size)
+        self.generations = int(generations)
+        self.elitism = int(elitism)
+        self.tournament_k = int(tournament_k)
+        self.crossover_rate = float(crossover_rate)
+        self.mutation_rate = float(mutation_rate)
 
-    def clone(self) -> "GASettings":
-        return GASettings(
-            population_size=self.population_size,
-            generations=self.generations,
-            elitism=self.elitism,
-            tournament_k=self.tournament_k,
-            crossover_rate=self.crossover_rate,
-            mutation_rate=self.mutation_rate,
+    def to_dict(self) -> dict:
+        return {
+            "population_size": self.population_size,
+            "generations": self.generations,
+            "elitism": self.elitism,
+            "tournament_k": self.tournament_k,
+            "crossover_rate": self.crossover_rate,
+            "mutation_rate": self.mutation_rate,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "GASettings":
+        return cls(
+            population_size=d.get("population_size", POPULATION_SIZE),
+            generations=d.get("generations", GENERATIONS),
+            elitism=d.get("elitism", ELITISM),
+            tournament_k=d.get("tournament_k", TOURNAMENT_K),
+            crossover_rate=d.get("crossover_rate", CROSSOVER_RATE),
+            mutation_rate=d.get("mutation_rate", MUTATION_RATE),
         )
-
-
-@dataclass
-class GAResult:
-    best: Board
-    duration: float
-    generations: int
-
-
-def _clamp(value: float, lower: float, upper: float) -> float:
-    return max(lower, min(value, upper))
-
-
-def _ensure_valid_settings(settings: GASettings) -> GASettings:
-    settings.population_size = max(2, int(settings.population_size))
-    settings.generations = max(1, int(settings.generations))
-    settings.elitism = max(0, min(int(settings.elitism), settings.population_size - 1))
-    settings.tournament_k = max(2, min(int(settings.tournament_k), settings.population_size))
-    settings.crossover_rate = _clamp(float(settings.crossover_rate), 0.0, 1.0)
-    settings.mutation_rate = _clamp(float(settings.mutation_rate), 0.0, 1.0)
-    return settings
 
 
 # ---------------------------
@@ -102,13 +137,19 @@ def crossover(p1: Board, p2: Board, crossover_rate: float) -> Tuple[Board, Board
     return uniform_crossover(p1, p2)
 
 
+
 # ---------------------------
 # GA main loop
 # ---------------------------
 
-def local_improve(board: Board, steps: int = 2) -> None:
-    """Small greedy repair: try a few random columns and move to a row that
-    reduces conflicts the most. Keeps it cheap but helpful for larger n."""
+
+def init_population(board_size: int, population_size: int) -> List[Board]:
+    return [Board(board_size) for _ in range(population_size)]
+
+
+def local_improve(board: Board, steps: int) -> None:
+    """Greedy repair: for a few random columns, move queen to row that
+    minimizes conflicts. Modifies board in-place."""
     if steps <= 0:
         return
     n = board.size
@@ -127,39 +168,64 @@ def local_improve(board: Board, steps: int = 2) -> None:
             if best_attacks is None or att < best_attacks:
                 best_attacks = att
                 best_row = r
+            # revert for next candidate
             board.state[col] = old
             board.calculate_number_of_attacks()
         board.state[col] = best_row
         board.calculate_number_of_attacks()
 
-def init_population(board_size: int, population_size: int) -> List[Board]:
-    return [Board(board_size) for _ in range(population_size)]
+
+class GAResult:
+    def __init__(self, best: Board, duration: float, generations: int) -> None:
+        self.best = best
+        self.duration = duration
+        self.generations = generations
 
 
 def run_ga(
-    settings: Optional[GASettings] = None,
-    board_size: int = BOARD_SIZE,
+    settings: GASettings,
+    board_size: int,
     time_limit_s: Optional[float] = TIME_LIMIT_S,
     verbose: bool = True,
+    dynamic_time: bool = False,
 ) -> GAResult:
-    params = _ensure_valid_settings(settings.clone() if settings else GASettings())
-
     start = time.perf_counter()
-    population = init_population(board_size, params.population_size)
+    population = init_population(board_size, settings.population_size)
     best = max(population, key=lambda b: b.fitness()).clone()
     max_fit = best.max_non_attacking_pairs()
     best_generation = 0
 
     if verbose:
         print(
-            f"Initial best fitness: {best.fitness()} / {max_fit} "
-            f"(attacks={best.number_of_attacks})"
+
+            f"Initial best fitness: {best.fitness()} / {max_fit} (attacks={best.number_of_attacks})"
         )
 
     last_generation = 0
-    for gen in range(1, params.generations + 1):
+    no_improve = 0
+    adapt_every = ADAPT_EVERY_GEN
+    # Operator weights for simple bandit-style crossover selection
+    op_w_one, op_w_uni = 0.5, 0.5
+    bandit_alpha = 0.1
+
+    patience_limit = max(ADAPT_EVERY_GEN, ADAPT_EVERY_GEN * PATIENCE_MULTIPLIER)
+
+    # Dynamic time window handling
+    if dynamic_time:
+        base_cap = time_limit_s if time_limit_s is not None else DYN_TIME_BASE_S
+        deadline = start + base_cap
+        min_deadline = start + DYN_TIME_MIN_S
+        max_deadline = start + DYN_TIME_MAX_S
+
+    for gen in range(1, settings.generations + 1):
         last_generation = gen
-        if time_limit_s is not None and (time.perf_counter() - start) >= time_limit_s:
+        now = time.perf_counter()
+        if dynamic_time and now >= deadline:
+            if verbose:
+                print(f"\nDynamic time window reached at generation {gen}.")
+            break
+        if not dynamic_time and time_limit_s is not None and (now - start) >= time_limit_s:
+
             if verbose:
                 print(f"\nTime limit reached at generation {gen}.")
             break
@@ -167,681 +233,546 @@ def run_ga(
         population.sort(key=lambda b: b.fitness(), reverse=True)
         if population[0].fitness() > best.fitness():
             best = population[0].clone()
-            best_generation = gen
-
+            no_improve = 0
+            # Extend dynamic deadline a bit on improvement
+            if dynamic_time:
+                deadline = min(deadline + DYN_TIME_EXTEND_S, max_deadline)
+        else:
+            no_improve += 1
         if best.number_of_attacks == 0:
             if verbose:
                 print(
-                    f"\nSolved at generation {gen} "
-                    f"in {time.perf_counter() - start:.3f}s."
+                    f"\nSolved at generation {gen} in {time.perf_counter() - start:.3f}s."
                 )
             break
 
-        elites = [population[i].clone() for i in range(min(params.elitism, len(population)))]
+        # Cap elitism to a fraction of population for robustness
+        elit_cap = max(0, int(MAX_ELITISM_FRAC * settings.population_size))
+        elit_count = min(settings.elitism, elit_cap, len(population))
+        elites = [population[i].clone() for i in range(elit_count)]
 
         new_pop: List[Board] = elites[:]
-        while len(new_pop) < params.population_size:
-            p1 = tournament_select(population, params.tournament_k)
-            p2 = tournament_select(population, params.tournament_k)
-            c1, c2 = crossover(p1, p2, params.crossover_rate)
-            c1.mutate(params.mutation_rate)
-            # small local improvement helps larger n
-            local_improve(c1, steps=max(0, board_size // 8))
-            if len(new_pop) < params.population_size:
+        while len(new_pop) < settings.population_size:
+            p1 = tournament_select(population, settings.tournament_k)
+            p2 = tournament_select(population, settings.tournament_k)
+            # Choose crossover operator by current weights
+            if random.random() > settings.crossover_rate:
+                c1, c2 = p1.clone(), p2.clone()
+                used_op = None
+            else:
+                r = random.random() * (op_w_one + op_w_uni)
+                if r < op_w_one:
+                    c1, c2 = one_point_crossover(p1, p2)
+                    used_op = 'one'
+                else:
+                    c1, c2 = uniform_crossover(p1, p2)
+                    used_op = 'uni'
+            c1.mutate(settings.mutation_rate)
+            # Adaptive repair based on how far we are from solution
+            max_pairs = best.max_non_attacking_pairs()
+            remaining_ratio = best.number_of_attacks / max(1, max_pairs)
+            max_repair = max(0, int(REPAIR_MAX_FRAC * board_size))
+            repair_steps = min(max_repair, REPAIR_BASE_STEPS + int(remaining_ratio * max_repair))
+            local_improve(c1, steps=repair_steps)
+            if len(new_pop) < settings.population_size:
                 new_pop.append(c1)
-            c2.mutate(params.mutation_rate)
-            local_improve(c2, steps=max(0, board_size // 8))
-            if len(new_pop) < params.population_size:
+            c2.mutate(settings.mutation_rate)
+            local_improve(c2, steps=repair_steps)
+            if len(new_pop) < settings.population_size:
                 new_pop.append(c2)
+
+            # Bandit reward: if children beat parents, slightly increase the used operator's weight
+            if used_op is not None:
+                parent_best = max(p1.fitness(), p2.fitness())
+                child_best = max(c1.fitness(), c2.fitness())
+                if child_best >= parent_best:
+                    if used_op == 'one':
+                        op_w_one = (1 - bandit_alpha) * op_w_one + bandit_alpha * (op_w_one + op_w_uni)
+                    else:
+                        op_w_uni = (1 - bandit_alpha) * op_w_uni + bandit_alpha * (op_w_one + op_w_uni)
+                else:
+                    # small decay to avoid stagnation
+                    if used_op == 'one':
+                        op_w_one *= (1 - bandit_alpha * 0.5)
+                    else:
+                        op_w_uni *= (1 - bandit_alpha * 0.5)
+
+        # Inject random immigrants into the worst fraction on stagnation
+        if IMMIGRANT_FRAC > 0 and no_improve >= max(1, ADAPT_EVERY_GEN // 2):
+            k = max(1, int(IMMIGRANT_FRAC * settings.population_size))
+            new_pop.sort(key=lambda b: b.fitness())  # ascending: worst first
+            for i in range(min(k, len(new_pop))):
+                new_pop[i] = Board(board_size)
 
         population = new_pop
 
+
+        # Simple dynamic hyperparameter adaptation based on progress
+        if (gen % adapt_every == 0) or (no_improve >= adapt_every):
+            # Estimate difficulty by remaining attacks ratio
+            max_pairs = best.max_non_attacking_pairs()
+            remaining_ratio = best.number_of_attacks / max(1, max_pairs)
+            # Adjust mutation: more if far from solution, less if close
+            if remaining_ratio > ADAPT_FAR_THRESHOLD:
+                settings.mutation_rate = min(0.5, settings.mutation_rate + ADAPT_MUT_STEP_UP)
+                settings.tournament_k = max(2, settings.tournament_k - 1)
+            elif remaining_ratio < ADAPT_NEAR_THRESHOLD:
+                settings.mutation_rate = max(0.02, settings.mutation_rate - ADAPT_MUT_STEP_DOWN)
+                settings.tournament_k = min(max(3, settings.tournament_k + 1), settings.population_size)
+            # Optionally shrink dynamic deadline a bit on stagnation
+            if dynamic_time and DYN_TIME_SHRINK_S > 0 and no_improve >= adapt_every:
+                deadline = max(deadline - DYN_TIME_SHRINK_S, min_deadline)
+            # Reset stagnation counter after adapting
+            no_improve = 0
+
+        # Early stop on severe stagnation
+        if no_improve >= patience_limit:
+            if verbose:
+                print(f"\nEarly stopping due to stagnation at generation {gen}.")
+            # Optionally do a soft restart rather than full stop
+            worst_replace = int(SOFT_RESTART_FRAC * settings.population_size)
+            if worst_replace > 0:
+                population.sort(key=lambda b: b.fitness(), reverse=True)
+                keep = population[: max(0, settings.population_size - worst_replace)]
+                add = [Board(board_size) for _ in range(worst_replace)]
+                population = keep + add
+            break
+
         if verbose and (gen % 100 == 0 or gen == 1):
             print(
-                f"Gen {gen:5d} | best fit = {best.fitness():3d}/{max_fit} "
-                f"| attacks={best.number_of_attacks}"
+                f"Gen {gen:5d} | best fit = {best.fitness():3d}/{max_fit} | attacks={best.number_of_attacks}"
+
             )
 
     duration = time.perf_counter() - start
     if verbose:
         print(
-            f"\nFinished in {duration:.3f}s | Best fitness: {best.fitness()}/{max_fit} "
-            f"| attacks={best.number_of_attacks} | best gen={best_generation}"
+            f"\nFinished in {duration:.3f}s | Best fitness: {best.fitness()}/{max_fit} | attacks={best.number_of_attacks}"
         )
     return GAResult(best=best, duration=duration, generations=last_generation)
 
 
 # ---------------------------
-# Hyperparameter GA support
+# Persistent parameter store utilities
 # ---------------------------
 
-POPULATION_SIZE_MIN, POPULATION_SIZE_MAX = 50, 300
-GENERATIONS_MIN, GENERATIONS_MAX = 200, 800
-ELITISM_MIN, ELITISM_MAX = 1, 10
-TOURNAMENT_MIN, TOURNAMENT_MAX = 2, 10
-CROSSOVER_MIN, CROSSOVER_MAX = 0.6, 0.95
-MUTATION_MIN, MUTATION_MAX = 0.05, 0.5
+def _load_store() -> dict:
+    try:
+        if PARAM_STORE_PATH.exists():
+            with PARAM_STORE_PATH.open("r", encoding="utf-8") as fh:
+                return json.load(fh)
+    except Exception:
+        pass
+    return {"total_runs": 0, "boards": {}}
 
 
-@dataclass
-class HyperparameterBounds:
-    pop_min: int
-    pop_max: int
-    gens_min: int
-    gens_max: int
-    elitism_min: int
-    elitism_max: int
-    tourn_min: int
-    tourn_max: int
-    crossover_min: float
-    crossover_max: float
-    mutation_min: float
-    mutation_max: float
+def _save_store(store: dict) -> None:
+    PARAM_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    store["last_updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    with PARAM_STORE_PATH.open("w", encoding="utf-8") as fh:
+        json.dump(store, fh, indent=2)
 
 
-def bounds_for_board(board_size: int) -> HyperparameterBounds:
-    # Scale ranges by board size; fallback to global minima
-    pop_min = max(POPULATION_SIZE_MIN, 12 * board_size)
-    pop_max = max(POPULATION_SIZE_MAX, 40 * board_size)
-    gens_min = max(GENERATIONS_MIN, 30 * board_size)
-    gens_max = max(GENERATIONS_MAX, 120 * board_size)
-    elitism_min = 1
-    elitism_max = max(ELITISM_MAX, max(2, board_size // 2))
-    tourn_min = 2
-    tourn_max = min(max(TOURNAMENT_MAX, 8), max(3, pop_min))
-    crossover_min = 0.65
-    crossover_max = 0.95
-    mutation_min = 0.05
-    mutation_max = 0.4
-    return HyperparameterBounds(
-        pop_min, pop_max, gens_min, gens_max,
-        elitism_min, elitism_max, tourn_min, tourn_max,
-        crossover_min, crossover_max, mutation_min, mutation_max,
+def _worker_run_once(payload: dict) -> dict:
+    s = GASettings.from_dict(payload["settings"])  # reconstruct settings in worker
+    res = run_ga(
+        s,
+        payload["board_size"],
+        time_limit_s=payload["time_limit"],
+        verbose=False,
+        dynamic_time=payload.get("dynamic_time", False),
     )
+    best = res.best
+    return {
+        "duration": res.duration,
+        "generations": res.generations,
+        "fitness": best.fitness(),
+        "success": best.number_of_attacks == 0,
+}
 
 
-@dataclass
-class HyperparameterGenome:
-    population_size: int
-    generations: int
-    elitism: int
-    tournament_k: int
-    crossover_rate: float
-    mutation_rate: float
-
-    @classmethod
-    def random(cls, b: HyperparameterBounds) -> "HyperparameterGenome":
-        genome = cls(
-            population_size=random.randint(b.pop_min, b.pop_max),
-            generations=random.randint(b.gens_min, b.gens_max),
-            elitism=random.randint(b.elitism_min, b.elitism_max),
-            tournament_k=random.randint(b.tourn_min, b.tourn_max),
-            crossover_rate=random.uniform(b.crossover_min, b.crossover_max),
-            mutation_rate=random.uniform(b.mutation_min, b.mutation_max),
-        )
-        genome.enforce_bounds(b)
-        return genome
-
-    def clone(self) -> "HyperparameterGenome":
-        return HyperparameterGenome(
-            population_size=self.population_size,
-            generations=self.generations,
-            elitism=self.elitism,
-            tournament_k=self.tournament_k,
-            crossover_rate=self.crossover_rate,
-            mutation_rate=self.mutation_rate,
-        )
-
-    def enforce_bounds(self, b: HyperparameterBounds) -> None:
-        self.population_size = int(_clamp(self.population_size, b.pop_min, b.pop_max))
-        self.generations = int(_clamp(self.generations, b.gens_min, b.gens_max))
-        self.elitism = int(_clamp(self.elitism, b.elitism_min, min(b.elitism_max, self.population_size - 1)))
-        self.elitism = max(1, self.elitism)
-        self.tournament_k = int(_clamp(self.tournament_k, b.tourn_min, min(b.tourn_max, self.population_size)))
-        self.crossover_rate = _clamp(self.crossover_rate, b.crossover_min, b.crossover_max)
-        self.mutation_rate = _clamp(self.mutation_rate, b.mutation_min, b.mutation_max)
-
-    def to_settings(self) -> GASettings:
-        return GASettings(
-            population_size=self.population_size,
-            generations=self.generations,
-            elitism=self.elitism,
-            tournament_k=self.tournament_k,
-            crossover_rate=self.crossover_rate,
-            mutation_rate=self.mutation_rate,
-        )
-
-
-@dataclass
-class HyperparameterEvaluation:
-    score: float
-    avg_fitness: float
-    avg_duration: float
-    avg_generations: float
-    success_rate: float
-    best_result: GAResult
-
-
-@dataclass
-class HyperparameterHistoryRecord:
-    generation: int
-    rank: int
-    score: float
-    success_rate: float
-    avg_fitness: float
-    avg_duration: float
-    avg_generations: float
-    genome: "HyperparameterGenome"
-
-
-@dataclass
-class HyperparameterOptimizationResult:
-    best_settings: GASettings
-    best_genome: "HyperparameterGenome"
-    best_evaluation: HyperparameterEvaluation
-    history: List[HyperparameterHistoryRecord] = field(default_factory=list)
-
-
-def hyperparameter_crossover(
-    p1: HyperparameterGenome, p2: HyperparameterGenome
-) -> Tuple[HyperparameterGenome, HyperparameterGenome]:
-    def pick(a: float, b: float) -> float:
-        return a if random.random() < 0.5 else b
-
-    child1 = HyperparameterGenome(
-        population_size=int(pick(p1.population_size, p2.population_size)),
-        generations=int(pick(p1.generations, p2.generations)),
-        elitism=int(pick(p1.elitism, p2.elitism)),
-        tournament_k=int(pick(p1.tournament_k, p2.tournament_k)),
-        crossover_rate=float(pick(p1.crossover_rate, p2.crossover_rate)),
-        mutation_rate=float(pick(p1.mutation_rate, p2.mutation_rate)),
-    )
-    child2 = HyperparameterGenome(
-        population_size=int(pick(p1.population_size, p2.population_size)),
-        generations=int(pick(p1.generations, p2.generations)),
-        elitism=int(pick(p1.elitism, p2.elitism)),
-        tournament_k=int(pick(p1.tournament_k, p2.tournament_k)),
-        crossover_rate=float(pick(p1.crossover_rate, p2.crossover_rate)),
-        mutation_rate=float(pick(p1.mutation_rate, p2.mutation_rate)),
-    )
-    # Bounds are enforced by the caller after mutation when bounds are available
-    return child1, child2
-
-
-def hyperparameter_mutate(
-    genome: HyperparameterGenome,
-    bounds: HyperparameterBounds,
-    rate: float = 0.25,
-) -> HyperparameterGenome:
-    child = genome.clone()
-    # Scale mutation steps relative to bounds
-    if random.random() < rate:
-        step = max(1, int(0.1 * (bounds.pop_max - bounds.pop_min)))
-        child.population_size += random.randint(-step, step)
-    if random.random() < rate:
-        step = max(1, int(0.1 * (bounds.gens_max - bounds.gens_min)))
-        child.generations += random.randint(-step, step)
-    if random.random() < rate:
-        child.elitism += random.randint(-2, 2)
-    if random.random() < rate:
-        child.tournament_k += random.randint(-2, 2)
-    if random.random() < rate:
-        child.crossover_rate += random.uniform(-0.08, 0.08)
-    if random.random() < rate:
-        child.mutation_rate += random.uniform(-0.08, 0.08)
-    child.enforce_bounds(bounds)
-    return child
-
-
-def _meta_tournament_pick(entries, k: int) -> HyperparameterGenome:
-    competitors = random.sample(entries, k)
-    best_entry = max(competitors, key=lambda item: item[0])
-    return best_entry[1].clone()
-
-
-def evaluate_hyperparameters(
-    genome: HyperparameterGenome,
-    board_size: int,
-    evaluation_runs: int,
-    time_limit_s: Optional[float],
-) -> HyperparameterEvaluation:
-    total_fitness = 0.0
-    total_duration = 0.0
-    total_generations = 0.0
+def _worker_run_many(payload: dict) -> dict:
+    """Run GA multiple times in one worker to reduce process startup overhead."""
+    s = GASettings.from_dict(payload["settings"])  # reconstruct settings in worker
+    board_size = payload["board_size"]
+    time_limit = payload["time_limit"]
+    dynamic_time = payload.get("dynamic_time", False)
+    repeat = int(payload.get("repeat", 1))
+    durations = []
     successes = 0
-    best_result: Optional[GAResult] = None
-
-    for _ in range(evaluation_runs):
-        result = run_ga(
-            settings=genome.to_settings(),
-            board_size=board_size,
-            time_limit_s=time_limit_s,
+    total_generations = 0
+    total_fitness = 0
+    for _ in range(max(1, repeat)):
+        res = run_ga(
+            s,
+            board_size,
+            time_limit_s=time_limit,
             verbose=False,
+            dynamic_time=dynamic_time,
         )
-        total_fitness += result.best.fitness()
-        total_duration += result.duration
-        total_generations += result.generations
-        if result.best.number_of_attacks == 0:
+        durations.append(res.duration)
+        total_generations += res.generations
+        best = res.best
+        total_fitness += best.fitness()
+        if best.number_of_attacks == 0:
             successes += 1
-        if best_result is None or result.best.fitness() > best_result.best.fitness():
-            best_result = result
-
-    # Fallback to ensure a result is always returned
-    if best_result is None:
-        best_result = run_ga(
-            settings=genome.to_settings(),
-            board_size=board_size,
-            time_limit_s=time_limit_s,
-            verbose=False,
-        )
-        total_fitness += best_result.best.fitness()
-        total_duration += best_result.duration
-        total_generations += best_result.generations
-        evaluation_runs += 1
-
-    avg_fitness = total_fitness / evaluation_runs
-    avg_duration = total_duration / evaluation_runs
-    avg_generations = total_generations / evaluation_runs
-    success_rate = successes / evaluation_runs
-
-    # Heavier weight on success for larger n
-    success_weight = 100 + board_size * 12
-    score = (
-        avg_fitness
-        + success_rate * success_weight
-        - (avg_duration * 2.0)
-        - (avg_generations * 0.05)
-    )
-
-    return HyperparameterEvaluation(
-        score=score,
-        avg_fitness=avg_fitness,
-        avg_duration=avg_duration,
-        avg_generations=avg_generations,
-        success_rate=success_rate,
-        best_result=best_result,
-    )
+    return {
+        "durations": durations,
+        "successes": successes,
+        "total_generations": total_generations,
+        "total_fitness": total_fitness,
+        "count": max(1, repeat),
+    }
 
 
-def optimize_parameters(
-    board_size: int = BOARD_SIZE,
-    meta_population_size: int = 8,
-    meta_generations: int = 6,
-    evaluation_runs: int = 2,
-    time_limit_s: Optional[float] = TIME_LIMIT_S,
-    verbose: bool = True,
-    record_history: bool = False,
-    history_top_k: int = 3,
-) -> HyperparameterOptimizationResult:
-    if meta_population_size < 2:
-        raise ValueError("meta_population_size must be at least 2")
-
-    bnds = bounds_for_board(board_size)
-    population = [HyperparameterGenome.random(bnds) for _ in range(meta_population_size)]
-    best_overall: Optional[Tuple[HyperparameterGenome, HyperparameterEvaluation]] = None
-    history_records: List[HyperparameterHistoryRecord] = []
-
-    for generation in range(1, meta_generations + 1):
-        scored = []
-        for genome in population:
-            evaluation = evaluate_hyperparameters(
-                genome,
-                board_size=board_size,
-                evaluation_runs=evaluation_runs,
-                time_limit_s=time_limit_s,
-            )
-            scored.append((evaluation.score, genome.clone(), evaluation))
-
-        scored.sort(key=lambda item: item[0], reverse=True)
-        top_score, top_genome, top_eval = scored[0]
-
-        if best_overall is None or top_eval.score > best_overall[1].score:
-            best_overall = (top_genome.clone(), top_eval)
-
-        if verbose:
-            print(
-                f"Meta gen {generation:2d} | score={top_score:7.2f} "
-                f"| success={top_eval.success_rate:.2f} | avg fitness={top_eval.avg_fitness:.2f}"
-            )
-
-        if record_history:
-            for rank, (_, genome_snapshot, evaluation_snapshot) in enumerate(
-                scored[: max(1, history_top_k)],
-                start=1,
-            ):
-                history_records.append(
-                    HyperparameterHistoryRecord(
-                        generation=generation,
-                        rank=rank,
-                        score=evaluation_snapshot.score,
-                        success_rate=evaluation_snapshot.success_rate,
-                        avg_fitness=evaluation_snapshot.avg_fitness,
-                        avg_duration=evaluation_snapshot.avg_duration,
-                        avg_generations=evaluation_snapshot.avg_generations,
-                        genome=genome_snapshot.clone(),
-                    )
-                )
-
-        next_population = [top_genome.clone()]
-        while len(next_population) < meta_population_size:
-            parent1 = _meta_tournament_pick(scored, k=min(3, len(scored)))
-            parent2 = _meta_tournament_pick(scored, k=min(3, len(scored)))
-            child1, child2 = hyperparameter_crossover(parent1, parent2)
-            child1 = hyperparameter_mutate(child1, bnds)
-            child2 = hyperparameter_mutate(child2, bnds)
-            next_population.append(child1)
-            if len(next_population) < meta_population_size:
-                next_population.append(child2)
-
-        if random.random() < 0.2:
-            next_population[-1] = HyperparameterGenome.random(bnds)
-
-        population = next_population
-
-    assert best_overall is not None
-    best_genome, best_eval = best_overall
-    return HyperparameterOptimizationResult(
-        best_settings=best_genome.to_settings(),
-        best_genome=best_genome.clone(),
-        best_evaluation=best_eval,
-        history=history_records if record_history else [],
-    )
-
-
-def run_gap_report(
-    board_min: int,
-    board_max: int,
-    meta_population: int,
-    meta_generations: int,
-    evaluation_runs: int,
-    time_limit_s: Optional[float],
-    history_top_k: int,
-    output_dir: Path,
-) -> Path:
-    if board_min < 4:
-        board_min = 4
-    if board_max < board_min:
-        board_max = board_min
-
-    meta_population = max(2, meta_population)
-    meta_generations = max(1, meta_generations)
-    evaluation_runs = max(1, evaluation_runs)
-    history_top_k = max(1, history_top_k)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    report_path = output_dir / f"gap_report_{timestamp}.txt"
-
-    header_lines = [
-        "GAP hyperparameter optimization report",
-        f"Board sizes: {board_min}-{board_max}",
-        f"Meta population: {meta_population}",
-        f"Meta generations: {meta_generations}",
-        f"Evaluation runs per genome: {evaluation_runs}",
-        f"History top-k: {history_top_k}",
-        f"Time limit per GA run: {time_limit_s if time_limit_s is not None else 'None'}",
-        "",
-    ]
-
-    with report_path.open("w", encoding="ascii", errors="ignore") as fh:
-        for line in header_lines:
-            fh.write(line + "\n")
-
-        for board_size in range(board_min, board_max + 1):
-            print(f"Running GAP optimization for board size {board_size}...")
-            optimization = optimize_parameters(
-                board_size=board_size,
-                meta_population_size=meta_population,
-                meta_generations=meta_generations,
-                evaluation_runs=evaluation_runs,
-                time_limit_s=time_limit_s,
-                verbose=False,
-                record_history=True,
-                history_top_k=history_top_k,
-            )
-
-            fh.write("=" * 72 + "\n")
-            fh.write(f"Board size n={board_size}\n")
-
-            fh.write("Best settings:\n")
-            for key, value in asdict(optimization.best_settings).items():
-                fh.write(f"  {key}: {value}\n")
-
-            summary = optimization.best_evaluation
-            fh.write("Best evaluation summary:\n")
-            fh.write(f"  score: {summary.score:.3f}\n")
-            fh.write(f"  success_rate: {summary.success_rate:.3f}\n")
-            fh.write(f"  avg_fitness: {summary.avg_fitness:.3f}\n")
-            fh.write(f"  avg_duration: {summary.avg_duration:.4f}s\n")
-            fh.write(f"  avg_generations: {summary.avg_generations:.2f}\n")
-
-            best_ga_result = summary.best_result
-            best_board = best_ga_result.best
-            fh.write("Best sampled board (column -> row):\n")
-            fh.write(f"  state: {best_board.state}\n")
-            fh.write(
-                f"  attacks: {best_board.number_of_attacks}, fitness: {best_board.fitness()} / {best_board.max_non_attacking_pairs()}\n"
-            )
-            fh.write(f"  duration: {best_ga_result.duration:.4f}s, generations: {best_ga_result.generations}\n")
-
-            if optimization.history:
-                fh.write("Generation history (top performers):\n")
-                current_generation = None
-                for entry in optimization.history:
-                    if entry.generation != current_generation:
-                        current_generation = entry.generation
-                        fh.write(f"  Generation {entry.generation}:\n")
-                    genome = entry.genome
-                    fh.write(
-                        "    Rank {rank}: score={score:.3f}, success={success:.3f}, avg_fit={avg_fit:.3f}, "
-                        "avg_dur={avg_dur:.4f}s, avg_gen={avg_gen:.2f}\n".format(
-                            rank=entry.rank,
-                            score=entry.score,
-                            success=entry.success_rate,
-                            avg_fit=entry.avg_fitness,
-                            avg_dur=entry.avg_duration,
-                            avg_gen=entry.avg_generations,
-                        )
-                    )
-                    fh.write(
-                        "      genome: population={pop}, generations={gens}, elitism={elitism}, "
-                        "tournament_k={tk}, crossover_rate={cr:.3f}, mutation_rate={mr:.3f}\n".format(
-                            pop=genome.population_size,
-                            gens=genome.generations,
-                            elitism=genome.elitism,
-                            tk=genome.tournament_k,
-                            cr=genome.crossover_rate,
-                            mr=genome.mutation_rate,
-                        )
-                    )
-
-            fh.write("\n")
-
-    return report_path
-
-
-def solve_with_restarts(
+def evaluate_settings_over_runs(
     settings: GASettings,
     board_size: int,
-    restarts: int,
+    runs: int,
     time_limit_s: Optional[float],
-    verbose: bool = True,
-) -> GAResult:
-    best_result: Optional[GAResult] = None
-    for i in range(max(1, restarts)):
-        result = run_ga(settings=settings, board_size=board_size, time_limit_s=time_limit_s, verbose=verbose)
-        if result.best.number_of_attacks == 0:
-            return result
-        if best_result is None or result.best.fitness() > best_result.best.fitness():
-            best_result = result
-    assert best_result is not None
-    return best_result
+    workers: Optional[int] = None,
+    dynamic_time: bool = False,
+) -> dict:
+    durations = []
+    successes = 0
+    total_generations = 0
+    total_fitness = 0
+    runs = max(1, int(runs))
+    if workers is None:
+        workers = os.cpu_count() or 1
+    workers = max(1, min(int(workers), runs))
+
+    if workers == 1:
+        for _ in range(runs):
+            res = run_ga(settings, board_size, time_limit_s=time_limit_s, verbose=False, dynamic_time=dynamic_time)
+            durations.append(res.duration)
+            total_generations += res.generations
+            total_fitness += res.best.fitness()
+            if res.best.number_of_attacks == 0:
+                successes += 1
+    else:
+        base = runs // workers
+        extra = runs % workers
+        payload = {
+            "settings": settings.to_dict(),
+            "board_size": board_size,
+            "time_limit": time_limit_s,
+            "dynamic_time": dynamic_time,
+        }
+        try:
+            with cf.ProcessPoolExecutor(max_workers=workers) as ex:
+                futures = []
+                for i in range(workers):
+                    repeat_i = base + (1 if i < extra else 0)
+                    if repeat_i <= 0:
+                        continue
+                    p = dict(payload)
+                    p["repeat"] = repeat_i
+                    futures.append(ex.submit(_worker_run_many, p))
+                for fut in cf.as_completed(futures):
+                    try:
+                        out = fut.result()
+                        durations.extend(out.get("durations", []))
+                        total_generations += out.get("total_generations", 0)
+                        total_fitness += out.get("total_fitness", 0)
+                        successes += out.get("successes", 0)
+                    except Exception:
+                        durations.append(float("inf"))
+        except Exception:
+            # Fallback to sequential if the environment blocks multiprocessing
+            for _ in range(runs):
+                res = run_ga(settings, board_size, time_limit_s=time_limit_s, verbose=False, dynamic_time=dynamic_time)
+                durations.append(res.duration)
+                total_generations += res.generations
+                total_fitness += res.best.fitness()
+                if res.best.number_of_attacks == 0:
+                    successes += 1
+    med = float(median(durations)) if durations else float("inf")
+    max_pairs = board_size * (board_size - 1) // 2
+    avg_attacks = max(0.0, (max_pairs * runs - total_fitness) / runs) if runs else float("inf")
+    return {
+        "median_duration": med,
+        "success_rate": successes / runs if runs else 0.0,
+        "avg_generations": total_generations / runs if runs else 0.0,
+        "avg_fitness": total_fitness / runs if runs else 0.0,
+        "avg_attacks": avg_attacks,
+    }
+
+
+def _perturb(settings: GASettings) -> GASettings:
+    s = GASettings.from_dict(settings.to_dict())
+    s.population_size = max(50, int(s.population_size + random.randint(-int(0.1 * s.population_size), int(0.1 * s.population_size))))
+    s.generations = max(200, int(s.generations + random.randint(-int(0.1 * s.generations), int(0.1 * s.generations))))
+    s.elitism = max(1, min(s.elitism + random.randint(-1, 2), s.population_size - 1))
+    s.tournament_k = max(2, min(s.tournament_k + random.randint(-1, 2), s.population_size))
+    s.crossover_rate = max(0.6, min(0.95, s.crossover_rate + random.uniform(-0.05, 0.05)))
+    s.mutation_rate = max(0.02, min(0.5, s.mutation_rate + random.uniform(-0.05, 0.05)))
+    return s
+
+
+def train_parameters(
+    board_size: int,
+    kilo: int = 0.1,
+    batch_runs: int = 34,
+    explore_prob: float = EXPLORE_PROB_START,
+    time_limit_s: Optional[float] = None,
+    workers: Optional[int] = None,
+) -> None:
+    """Run many batches and keep parameters that improve median duration without
+    hurting success rate, persisting improvements between runs.
+    """
+    total_budget = max(1, kilo) * 1000
+    store = _load_store()
+    bkey = str(board_size)
+    entry = store["boards"].setdefault(bkey, {"trained_runs": 0})
+    # Start from persisted best if exists, else from recommended
+    if "best_settings" in entry:
+        current = GASettings.from_dict(entry["best_settings"])
+        current_metrics = entry.get("best_metrics", {})
+    else:
+        current = GASettings.from_dict(recommend_params(board_size))
+        current_metrics = {}
+
+    if not current_metrics:
+        current_metrics = evaluate_settings_over_runs(current, board_size, batch_runs, time_limit_s, workers=workers)
+
+    runs_done = 0
+    # Prepare CSV training log per board size
+    log_path = PARAM_STORE_PATH.parent / f"training_log_n{board_size}.csv"
+    PARAM_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not log_path.exists():
+        with log_path.open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerow([
+                "timestamp", "runs_done", "accept", "median_s", "best_median_s", "success_rate", "avg_attacks",
+                "pop", "gens", "elitism", "tourn_k", "cross", "mut"
+            ])
+    accepted = 0
+    try:
+        while runs_done < total_budget:
+            # Occasionally explore a new candidate
+            if random.random() < explore_prob:
+                candidate = _perturb(current)
+            else:
+                candidate = current  # re-measure stability
+
+            cand_metrics = evaluate_settings_over_runs(candidate, board_size, batch_runs, time_limit_s, workers=workers)
+            runs_done += batch_runs
+            store["total_runs"] = store.get("total_runs", 0) + batch_runs
+            entry["trained_runs"] = entry.get("trained_runs", 0) + batch_runs
+
+            # Accept if success not worse and median duration improved sufficiently
+            improved = cand_metrics["median_duration"] < current_metrics["median_duration"] * (1 - ACCEPT_MEDIAN_IMPROVEMENT)
+            not_worse_success = cand_metrics["success_rate"] >= current_metrics.get("success_rate", 0.0)
+            # Also consider average attacks: accept if attacks reduced sufficiently and success not worse
+            attacks_improved = cand_metrics.get("avg_attacks", 1e9) < current_metrics.get("avg_attacks", 1e9) * (1 - ACCEPT_ATTACKS_IMPROVEMENT)
+            accept = (improved and not_worse_success) or (attacks_improved and not_worse_success)
+            # With small probability, accept equal performance to keep exploration
+            if not accept and random.random() < 0.05 and not_worse_success:
+                accept = True
+
+            if accept:
+                current = candidate
+                current_metrics = cand_metrics
+                accepted += 1
+                # small reward: briefly increase exploration for next step
+                explore_prob = min(EXPLORE_PROB_MAX, explore_prob + EXPLORE_PROB_REWARD)
+                # persist improvement only if it beats best-so-far
+                best_metrics_prior = entry.get("best_metrics", {})
+                improved_vs_best = (
+                    cand_metrics["median_duration"] < best_metrics_prior.get("median_duration", float("inf"))
+                    or cand_metrics.get("avg_attacks", 1e9) < best_metrics_prior.get("avg_attacks", 1e9)
+                ) and not_worse_success
+                if improved_vs_best:
+                    entry["best_settings"] = current.to_dict()
+                    entry["best_metrics"] = cand_metrics
+                    _save_store(store)
+            else:
+                # cool exploration a bit
+                explore_prob = max(EXPLORE_PROB_MIN, explore_prob - EXPLORE_PROB_COOL)
+
+            best_med = (entry.get("best_metrics") or {}).get("median_duration", current_metrics["median_duration"])
+            print(
+                f"Trained {runs_done}/{total_budget} runs | accept={accept} | med={current_metrics['median_duration']:.4f}s "
+                f"best_med={best_med:.4f}s | success={current_metrics['success_rate']:.2f} | "
+                f"avg_attacks={current_metrics.get('avg_attacks', float('nan')):.2f} | accepted={accepted}"
+            )
+            # Append to CSV log
+            try:
+                with log_path.open("a", newline="", encoding="utf-8") as fh:
+                    writer = csv.writer(fh)
+                    writer.writerow([
+                        time.strftime("%Y-%m-%d %H:%M:%S"),
+                        runs_done,
+                        int(bool(accept)),
+                        f"{current_metrics['median_duration']:.6f}",
+                        f"{best_med:.6f}",
+                        f"{current_metrics['success_rate']:.4f}",
+                        f"{current_metrics.get('avg_attacks', float('nan')):.3f}",
+                        current.population_size,
+                        current.generations,
+                        current.elitism,
+                        current.tournament_k,
+                        f"{current.crossover_rate:.3f}",
+                        f"{current.mutation_rate:.3f}",
+                    ])
+            except Exception:
+                pass
+
+            # Periodic checkpoint even without acceptance
+            batches_done = runs_done // batch_runs if batch_runs else 0
+            if STORE_CHECKPOINT_BATCHES and batches_done % max(1, int(STORE_CHECKPOINT_BATCHES)) == 0:
+                _save_store(store)
+    except KeyboardInterrupt:
+        print("\nInterrupted by user; saving current best and progress...")
+    finally:
+        # Final persist
+        entry["best_settings"] = current.to_dict()
+        entry["best_metrics"] = current_metrics
+        _save_store(store)
 
 
 # ---------------------------
-# Entry point
+# Entry point and CLI
 # ---------------------------
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="N-Queens genetic algorithm.")
-    parser.add_argument("--optimize-params", action="store_true", help="Run the hyperparameter GA before solving.")
-    parser.add_argument("--board-size", type=int, default=BOARD_SIZE, help="Board size to solve.")
-    parser.add_argument(
-        "--time-limit",
-        type=float,
-        default=TIME_LIMIT_S if TIME_LIMIT_S is not None else None,
-        help="Optional time limit for each GA run (seconds).",
-    )
-    parser.add_argument("--population", type=int, help="Override population size for the solver GA.")
-    parser.add_argument("--generations", type=int, help="Override number of generations for the solver GA.")
-    parser.add_argument("--elitism", type=int, help="Override elitism count for the solver GA.")
-    parser.add_argument("--tournament-k", type=int, help="Override tournament size for the solver GA.")
-    parser.add_argument("--crossover-rate", type=float, help="Override crossover rate for the solver GA.")
-    parser.add_argument("--mutation-rate", type=float, help="Override mutation rate for the solver GA.")
-    parser.add_argument(
-        "--restarts",
-        type=int,
-        default=1,
-        help="How many independent GA runs to try; stops early on success.",
-    )
-    parser.add_argument(
-        "--no-run",
-        action="store_true",
-        help="Do not execute any GA; parse args and exit (useful for IDEs).",
-    )
-    parser.add_argument("--meta-population", type=int, default=8, help="Hyperparameter GA population size.")
-    parser.add_argument("--meta-generations", type=int, default=6, help="Hyperparameter GA generations.")
-    parser.add_argument(
-        "--meta-evaluations",
-        type=int,
-        default=2,
-        help="Base GA runs per hyperparameter evaluation.",
-    )
-    parser.add_argument(
-        "--gap-report",
-        action="store_true",
-        help="Generate a GAP report across a range of board sizes instead of solving once.",
-    )
-    parser.add_argument(
-        "--gap-board-min",
-        type=int,
-        default=4,
-        help="Smallest board size to include in the GAP report.",
-    )
-    parser.add_argument(
-        "--gap-board-max",
-        type=int,
-        default=16,
-        help="Largest board size to include in the GAP report.",
-    )
-    parser.add_argument(
-        "--gap-output",
-        type=str,
-        default="reports",
-        help="Directory where GAP report files will be written.",
-    )
-    parser.add_argument(
-        "--gap-history-top",
-        type=int,
-        default=3,
-        help="Number of top genomes to log per meta generation in the GAP report.",
-    )
-    parser.add_argument(
-        "--gap-evaluations",
-        type=int,
-        default=34,
-        help="Number of GA runs per genome when building the GAP report.",
-    )
+    parser = argparse.ArgumentParser(description="N-Queens GA with persistent parameter training")
+    parser.add_argument("--board-size", type=int, default=BOARD_SIZE)
+    parser.add_argument("--time-limit", type=float, default=TIME_LIMIT_S if TIME_LIMIT_S is not None else None)
+    parser.add_argument("--population", type=int)
+    parser.add_argument("--generations", type=int)
+    parser.add_argument("--elitism", type=int)
+    parser.add_argument("--tournament-k", type=int)
+    parser.add_argument("--crossover-rate", type=float)
+    parser.add_argument("--mutation-rate", type=float)
+    parser.add_argument("--train-params", action="store_true", help="Run persistent training batches and save best params")
+    parser.add_argument("--train-kilo", type=int, default=None, help="How many thousands of runs to train (0 = skip)")
+    parser.add_argument("--train-batch", type=int, default=None, help="Runs per evaluation batch (statistical check)")
+    parser.add_argument("--repeats", type=int, default=None, help="Repeat solve N times and summarize metrics")
+    parser.add_argument("--train-multi", type=str, default=None, help="Comma-separated or range list of board sizes to train (e.g. '4-10,16,18')")
+    parser.add_argument("--no-run", action="store_true", help="Parse and exit")
+    parser.add_argument("--workers", type=int, default=os.cpu_count() or 1, help="Parallel workers (CPU cores) to use")
+    parser.add_argument("--dynamic-time", action="store_true", help="Enable dynamic time window (extends on improvements)")
 
     args = parser.parse_args()
-
-    time_limit = args.time_limit if args.time_limit is not None else None
-
-    # Global kill-switch via flag or environment variable
-    if args.no_run or os.getenv("NQUEENS_DISABLE_RUN") == "1":
-        print("Execution disabled (--no-run or NQUEENS_DISABLE_RUN=1). Exiting.")
+    if args.no_run:
+        print("Execution disabled (--no-run). Exiting.")
         return
 
-    if args.gap_report:
-        report_path = run_gap_report(
-            board_min=int(args.gap_board_min),
-            board_max=int(args.gap_board_max),
-            meta_population=args.meta_population,
-            meta_generations=args.meta_generations,
-            evaluation_runs=args.gap_evaluations,
-            time_limit_s=time_limit,
-            history_top_k=args.gap_history_top,
-            output_dir=Path(args.gap_output),
-        )
-        print(f"\nGAP report written to {report_path}")
+    n = max(4, int(args.board_size))
+    base = recommend_params(n)
+    settings = GASettings.from_dict(base)
+
+    # Overrides
+    for name in ("population", "generations", "elitism", "tournament_k", "crossover_rate", "mutation_rate"):
+        val = getattr(args, name if name != "population" else "population")
+        if val is not None:
+            setattr(settings, name if name != "population" else "population_size", val)
+
+    # Determine per-n run defaults (used for training). For normal single solve,
+    # the default is to run once and print the board unless --repeats is provided.
+    policy = get_run_defaults(n)
+    repeats_solve = int(args.repeats) if args.repeats is not None else 1
+    train_batch = int(args.train_batch) if args.train_batch is not None else int(policy["train_batch"])
+    train_kilo = int(args.train_kilo) if args.train_kilo is not None else int(policy["train_kilo"])
+
+    # Helper to parse multi-n strings like "4-10,16,18"
+    def _parse_sizes(spec: str) -> list[int]:
+        out: list[int] = []
+        for part in (spec or "").split(','):
+            part = part.strip()
+            if not part:
+                continue
+            if '-' in part:
+                a, b = part.split('-', 1)
+                try:
+                    lo = int(a.strip()); hi = int(b.strip())
+                except ValueError:
+                    continue
+                if hi < lo:
+                    lo, hi = hi, lo
+                out.extend(range(lo, hi + 1))
+            else:
+                try:
+                    out.append(int(part))
+                except ValueError:
+                    pass
+        # unique + sorted
+        return sorted(set([n for n in out if n >= 4]))
+
+    multi_spec = args.train_multi if args.train_multi is not None else TRAIN_MULTI_DEFAULT
+    if multi_spec:
+        boards = _parse_sizes(multi_spec)
+        if not boards:
+            print("No valid board sizes parsed for --train-multi.")
+            return
+        for bn in boards:
+            pol = get_run_defaults(bn)
+            print(f"Training n={bn} | kilo={pol['train_kilo']} | batch={pol['train_batch']}")
+            train_parameters(
+                board_size=bn,
+                kilo=max(1, int(pol['train_kilo'] or 1)),
+                batch_runs=max(10, int(pol['train_batch'] or 34)),
+                time_limit_s=args.time_limit if args.time_limit is not None else None,
+                workers=max(1, int(args.workers or 1)),
+            )
         return
 
-    board_size = max(4, int(args.board_size))
-
-    # Seed defaults from constants.recommend_params for the chosen board size
-    rec = recommend_params(board_size)
-    settings = _ensure_valid_settings(
-        GASettings(
-            population_size=rec["population_size"],
-            generations=rec["generations"],
-            elitism=rec["elitism"],
-            tournament_k=rec["tournament_k"],
-            crossover_rate=rec["crossover_rate"],
-            mutation_rate=rec["mutation_rate"],
-        )
+    # Only start training when explicitly requested via CLI flags
+    training_requested = bool(
+        args.train_params or (args.train_kilo is not None and args.train_kilo > 0)
     )
-
-    overrides = {
-        "population_size": args.population,
-        "generations": args.generations,
-        "elitism": args.elitism,
-        "tournament_k": args.tournament_k,
-        "crossover_rate": args.crossover_rate,
-        "mutation_rate": args.mutation_rate,
-    }
-    for field_name, value in overrides.items():
-        if value is not None:
-            setattr(settings, field_name, value)
-    settings = _ensure_valid_settings(settings)
-
-    # board_size already computed above
-
-    if args.optimize_params:
-        optimization = optimize_parameters(
-            board_size=board_size,
-            meta_population_size=args.meta_population,
-            meta_generations=args.meta_generations,
-            evaluation_runs=max(1, args.meta_evaluations),
-            time_limit_s=time_limit,
-            verbose=True,
-            record_history=False,
-            history_top_k=args.gap_history_top,
+    if training_requested:
+        # Resolve effective training defaults now that training is requested
+        train_kilo_eff = int(args.train_kilo) if args.train_kilo is not None else int(policy["train_kilo"])
+        train_batch_eff = int(args.train_batch) if args.train_batch is not None else int(policy["train_batch"])
+        print(f"Training n={n} | kilo={train_kilo_eff} | batch={train_batch_eff}")
+        train_parameters(
+            board_size=n,
+            kilo=max(1, train_kilo_eff or 1),
+            batch_runs=max(10, train_batch_eff),
+            time_limit_s=args.time_limit if args.time_limit is not None else None,
+            workers=max(1, int(args.workers or 1)),
         )
-        best_settings = optimization.best_settings
-        summary = optimization.best_evaluation
-        print("\nBest hyperparameters found:")
-        for key, value in asdict(best_settings).items():
-            print(f"  {key}: {value}")
-        settings = best_settings
-        settings = _ensure_valid_settings(settings)
-        result = solve_with_restarts(
-            settings=settings,
-            board_size=board_size,
-            restarts=max(1, args.restarts),
-            time_limit_s=time_limit,
-            verbose=True,
+        return
+
+    # Solve once or multiple times and summarize
+    if repeats_solve and repeats_solve > 1:
+        metrics = evaluate_settings_over_runs(
+            settings, n, repeats_solve, args.time_limit,
+            workers=max(1, int(args.workers or 1)),
+            dynamic_time=bool(args.dynamic_time or DYN_TIME_ENABLED_DEFAULT),
         )
         print(
-            f"\nHyperparameter GA summary: score={summary.score:.2f}, "
-            f"success_rate={summary.success_rate:.2f}, avg_fitness={summary.avg_fitness:.2f}"
+            f"Repeated {repeats_solve} runs | median={metrics['median_duration']:.4f}s "
+            f"success={metrics['success_rate']:.2f} | avg_gen={metrics['avg_generations']:.2f} | avg_fit={metrics['avg_fitness']:.2f} | avg_attacks={metrics.get('avg_attacks', float('nan')):.2f}"
         )
-        view.print_board_box(result.best, title="\nBest board after hyperparameter GA:")
+        # Auto-persist if this configuration beats stored best for this n
+        try:
+            store = _load_store()
+            entry = store.setdefault("boards", {}).setdefault(str(n), {"trained_runs": 0})
+            current_best = entry.get("best_metrics") or {}
+            # Improvement if median time is lower OR avg_attacks lower with non-worse success
+            better_time = metrics["median_duration"] < (current_best.get("median_duration", float("inf")))
+            better_attacks = metrics.get("avg_attacks", float("inf")) < current_best.get("avg_attacks", float("inf"))
+            not_worse_success = metrics["success_rate"] >= current_best.get("success_rate", 0.0)
+            if better_time or (better_attacks and not_worse_success):
+                entry["best_settings"] = settings.to_dict()
+                entry["best_metrics"] = metrics
+                entry["trained_runs"] = entry.get("trained_runs", 0) + repeats_solve
+                store["total_runs"] = store.get("total_runs", 0) + repeats_solve
+                _save_store(store)
+                print("Saved improved parameters to params/param_store.json for n=", n)
+        except Exception as e:
+            print("Warning: could not persist improved parameters:", e)
     else:
-        result = solve_with_restarts(
+        result = run_ga(
             settings=settings,
-            board_size=board_size,
-            restarts=max(1, args.restarts),
-            time_limit_s=time_limit,
+            board_size=n,
+            time_limit_s=args.time_limit,
             verbose=True,
+            dynamic_time=bool(args.dynamic_time or DYN_TIME_ENABLED_DEFAULT),
         )
         view.print_board_box(result.best, title="\nBest board:")
 
