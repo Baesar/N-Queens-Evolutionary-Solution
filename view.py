@@ -1,37 +1,11 @@
-from constants import BOARD_SIZE
+from constants import BOARD_SIZE, POPULATION_SIZE
 from app import boards
 import numpy as np 
 import matplotlib.pyplot as plt 
 import os 
 import time
+## Grupp 13 property . you better not tresspass !
 ###############################################################
-## INIT FUNCTIONS
-## Fills the table with
-def fill_table():
-    table = []
-    for i in range(BOARD_SIZE):
-        # Create a new list for each row
-        row = [" "] * BOARD_SIZE
-        table.append(row)
-    return table
-## reads the board and writes queens where its required 
-def get_table (board, table):
-  
-    for i in range(BOARD_SIZE):
-        table[board.state[i]][i] = "Q"
-    return table
-#####################################################################################
-## Primitive visuals 
-## Cheks the visual board in the console 
-def print_console_table (table):
-
-    for i in range(BOARD_SIZE):
-        for j in range(BOARD_SIZE):
-            if table.state[j] == i:
-                print("|W|", end="")
-            else:
-                print("| |" , end="")
-        print(" ")
 #####################################################################################
 ## Use of matplotlib
 ## We use black background, white tiles all over and inside white tiles with queens inside we put a black Q inside 
@@ -45,23 +19,23 @@ def print_matplotlib(table):
     chessboard = np.zeros((BOARD_SIZE, BOARD_SIZE))
     for i in range(BOARD_SIZE):
         for j in range(BOARD_SIZE):
-            # Create alternating pattern (like a chessboard)
+            ##Create alternating pattern (like a chessboard)
             if (i + j) % 2 == 0:
-                chessboard[i, j] = 1  # White tile
+                chessboard[i, j] = 1  ##White tiles
     
     ##Display the chessboard
     ax.imshow(chessboard, cmap='binary', interpolation='nearest')
     
-    #Add the queens
+    ##Add the queens
     for i in range(BOARD_SIZE):
         for j in range(BOARD_SIZE):
             if table.state[j] == i:
-                #Only place W white on black tiles (where chessboard value is 1)
+                ##Only place W white on black tiles (where chessboard value is 1)
                 if (i + j) % 2 == 0:
                     ax.text(j, i, 'W', fontsize= (200 / BOARD_SIZE), ha='center', va='center', 
                             color='white', weight='bold')
                 else:
-                    # For white tiles, we need a black W
+                    ##For white tiles, we need a black W
                     ax.text(j, i, 'W', fontsize=200 / BOARD_SIZE, ha='center', va='center', 
                             color='black', weight='bold')
             else :
@@ -90,7 +64,7 @@ def print_matplotlib_timer(tables , milisec):
     for i in range(BOARD_SIZE):
         for j in range(BOARD_SIZE):
             if (i + j) % 2 == 0:
-                chessboard[i, j] = 1  # White tile
+                chessboard[i, j] = 1  ##White tiles
                 ##Put in the queens
     for t in tables:
         ##adds delay here
@@ -112,16 +86,8 @@ def print_matplotlib_timer(tables , milisec):
                             color='black', weight = 'bold')
         plt.title(f'Boards heuristic value is : {t.number_of_attacks}')
         plt.draw()
-        plt.pause(milisec)  # 2 second delay
+        plt.pause(milisec)  ##2 second delay
 
-
-
-
-
-                
-            
-            
-    
 
 #####################################################################################
 ## Heuristic and minumum steps required sorting : 
@@ -136,6 +102,28 @@ def print_matplotlib_timer(tables , milisec):
 
 
 #####################################################################################
+def print_heuristic_tables(tables):
+    fig, ax = plt.subplots(figsize=(8, 8))
+    heuristic_lst = [t.number_of_attacks for t in tables] ##Lambda 
+    x_values = range(len(heuristic_lst))
+    ax.plot(x_values, heuristic_lst,  'b-' , linewidth=2, marker='o', markersize = 4)
+
+    ax.set_xlabel('Tables', fontsize = 10)
+    ax.set_ylabel('Heuristics' , fontsize = 10)
+    ax.set_title('Herustic in line table')
+    ax.grid(True , alpha = 0.3)
+
+    plt.tight_layout()
+    plt.show() 
+    
+        ##Tables[i].number_of_attacks => Heuristic value 
+        ##plot them
+
+
+
+
+
+
 
 
 
@@ -156,5 +144,6 @@ def print_matplotlib_timer(tables , milisec):
 visual_table = boards[1]
 ## Old version ## visual_table = get_table(boards[1], visual_table)
 ## Old version ## print_console_table(visual_table)
-print_matplotlib_timer(boards, 1)
+# for later # print_matplotlib_timer(boards, 1)
+print_heuristic_tables(boards)
 

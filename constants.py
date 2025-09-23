@@ -1,5 +1,5 @@
 # Problem constants
-BOARD_SIZE = 50
+BOARD_SIZE = 10
 
 # Evolutionary constants
 POPULATION_SIZE = 10
