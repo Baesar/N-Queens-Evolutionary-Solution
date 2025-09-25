@@ -18,7 +18,7 @@ MAXIMUM_GENERATIONS = BOARD_SIZE**3
 SELECTION_SIZE = 0.05
 
 # The rate at which solutions mutate
-MUTATION_RATE = 1
+MUTATION_RATE = 0.8
 
 
 #####################
@@ -26,7 +26,7 @@ MUTATION_RATE = 1
 #####################
 
 # The amount of times the algorithm is run
-REPETITIONS = 1
+REPETITIONS = 25
 
 # wall-clock time limit (in seconds)
 TIME_LIMIT_S = None
