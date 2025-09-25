@@ -5,17 +5,19 @@ import board as board_module
 from Evolutionary import selection, genetic_operators
 from constants import *
 
+
 total_time = 0
 total_generations = 0
 
 for rep in range(REPETITIONS):
-    print(rep)
+    print(rep + 1)
     start = perf_counter()
     problem_solved = False
     generation = 0
 
     # Initialize first generation's samples.
-    boards = [board_module.Board(BOARD_SIZE) for x in range(POPULATION_SIZE)]
+    boards = [board_module.Board(BOARD_SIZE)
+              for x in range(POPULATION_SIZE)]
 
     while not problem_solved:
         generation += 1
@@ -29,7 +31,7 @@ for rep in range(REPETITIONS):
         # if not generation % 50:
         #     print(f"Genereration {generation}:")
         #     print(
-        #         f"Best solution: {boards[0].state} {boards[0].number_of_attacks}\n")
+        #        f"Best solution: {boards[0].state} {boards[0].number_of_attacks}\n")
 
         # Check if solution is found.
         if boards[0].number_of_attacks == 0:
