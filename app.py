@@ -10,7 +10,8 @@ total_time = 0
 total_generations = 0
 
 for rep in range(REPETITIONS):
-    print(rep + 1)
+    if REPETITIONS > 1:
+        print(rep + 1)
     start = perf_counter()
     problem_solved = False
     generation = 0
@@ -28,10 +29,11 @@ for rep in range(REPETITIONS):
         # Sort solutions (best first).
         boards.sort(key=lambda board: board.number_of_attacks)
 
-        # if not generation % 50:
-        #     print(f"Genereration {generation}:")
-        #     print(
-        #        f"Best solution: {boards[0].state} {boards[0].number_of_attacks}\n")
+        if REPETITIONS == 1:
+            if not generation % 50:
+                print(f"Genereration {generation}:")
+                print(
+                    f"Best solution: {boards[0].state} {boards[0].number_of_attacks}\n")
 
         # Check if solution is found.
         if boards[0].number_of_attacks == 0:
@@ -40,10 +42,11 @@ for rep in range(REPETITIONS):
             total_time += end - start
             total_generations += generation
             problem_solved = True
-            # print(
-            #     f"Solution found at after {generation} generations: {boards[0].state}")
-            # print(f"It took {end - start:.6f} seconds")
-            # break
+            if REPETITIONS == 1:
+                print(
+                    f"Solution found at after {generation} generations: {boards[0].state}")
+                print(f"It took {end - start:.6f} seconds")
+            break
 
         # Select boards to be used for recombination.
         selected_boards = selection.roulette_wheel_selection(

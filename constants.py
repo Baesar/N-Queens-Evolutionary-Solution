@@ -1,7 +1,7 @@
 #####################
 # Problem constants
 #####################
-BOARD_SIZE = 10
+BOARD_SIZE = 32
 
 
 #####################
@@ -9,13 +9,13 @@ BOARD_SIZE = 10
 #####################
 
 # The amount of solutions per generation
-POPULATION_SIZE = 100
+POPULATION_SIZE = 250
 
 # Number of generations before algorithm terminates
 MAXIMUM_GENERATIONS = BOARD_SIZE**3
 
 # The proportion of solutions to proceed to recombination
-SELECTION_SIZE = 0.1
+SELECTION_SIZE = 0.05
 
 # The rate at which solutions mutate
 MUTATION_RATE = 1
@@ -26,7 +26,7 @@ MUTATION_RATE = 1
 #####################
 
 # The amount of times the algorithm is run
-REPETITIONS = 100
+REPETITIONS = 1
 
 # wall-clock time limit (in seconds)
 TIME_LIMIT_S = None
