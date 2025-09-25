@@ -72,8 +72,7 @@ for rep in range(REPETITIONS):
                     for child_state in child_states]
 
         # Mutate children.
-        children = [genetic_operators.mutate(child) if random() < MUTATION_RATE else child
-                    for child in children]
+        children = [genetic_operators.mutate(child, MUTATION_RATE) for child in children]
 
         # Assign new population of solution to the boards variable.
         boards = children

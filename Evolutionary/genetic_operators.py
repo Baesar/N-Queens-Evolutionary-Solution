@@ -1,4 +1,4 @@
-from random import randint
+from random import randint, random
 
 
 def pair_parents(parents, amount):
@@ -45,24 +45,25 @@ def one_point_crossover(parent_1, parent_2):
     return child_1_state, child_2_state
 
 
-def mutate(child):
-    """Mutate child by altering one if it's elements.
+def mutate(child, rate):
+    """Mutate child with a probability equal to rate.
 
     Args:
         child: The child to be mutated.
+        rate: The rate of which a child is mutated.
 
     Returns:
         The mutated child.
     """
 
-    index = randint(0, child.size - 1)
+    for index in child.state:
+        if random() < rate:
+            old_value = child.state[index]
+            new_value = old_value
 
-    old_value = child.state[index]
-    new_value = old_value
+            while new_value == old_value:
+                new_value = randint(0, child.size - 1)
 
-    while new_value == old_value:
-        new_value = randint(0, child.size - 1)
-
-    child.state[index] = new_value
+            child.state[index] = new_value
 
     return child

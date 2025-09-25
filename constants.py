@@ -1,7 +1,7 @@
 #####################
 # Problem constants
 #####################
-BOARD_SIZE = 32
+BOARD_SIZE = 8
 
 
 #####################
@@ -9,16 +9,16 @@ BOARD_SIZE = 32
 #####################
 
 # The amount of solutions per generation
-POPULATION_SIZE = 250
+POPULATION_SIZE = 150
 
 # Number of generations before algorithm terminates
 MAXIMUM_GENERATIONS = BOARD_SIZE**3
 
 # The proportion of solutions to proceed to recombination
-SELECTION_SIZE = 0.05
+SELECTION_SIZE = 0.8
 
 # The rate at which solutions mutate
-MUTATION_RATE = 0.8
+MUTATION_RATE = 0.1
 
 
 #####################
