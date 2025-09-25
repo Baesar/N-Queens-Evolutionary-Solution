@@ -16,7 +16,7 @@ import json
 from typing import Any, Dict
 
 # Problem constant: default board size
-BOARD_SIZE = 15  # Try 8, 12, 16, 20, 36, ...
+BOARD_SIZE = 50  # Try 8, 12, 16, 20, 36, ...
 
 # Location for persisted parameter improvements
 PARAM_STORE_PATH = Path("params/param_store.json")
@@ -206,36 +206,36 @@ def get_run_defaults(n: int) -> Dict[str, int]:
 # Examples:
 #   TRAIN_MULTI_DEFAULT = "4-8,18"   # trains for n=4,5,6,7,8,18
 #   TRAIN_MULTI_DEFAULT = ""          # no auto multi-n training; BOARD_SIZE is used
-TRAIN_MULTI_DEFAULT: str = "18"
+TRAIN_MULTI_DEFAULT: str = ""
 
 # Pre-filled per-n policies (you can edit these to your needs)
 # Small n (4–10)
 RUN_DEFAULTS_PER_BOARD.update({
-    "4":  {"repeats": 500,  "train_batch": 34, "train_kilo": 5},
-    "5":  {"repeats": 600,  "train_batch": 34, "train_kilo": 6},
-    "6":  {"repeats": 700,  "train_batch": 34, "train_kilo": 7},
-    "7":  {"repeats": 800,  "train_batch": 34, "train_kilo": 8},
-    "8":  {"repeats": 1000, "train_batch": 34, "train_kilo": 10},
-    "9":  {"repeats": 1000, "train_batch": 34, "train_kilo": 10},
-    "10": {"repeats": 1000, "train_batch": 34, "train_kilo": 10},
+    "4":  {"repeats": 500,  "train_batch": 50, "train_kilo": 5},
+    "5":  {"repeats": 600,  "train_batch": 50, "train_kilo": 6},
+    "6":  {"repeats": 700,  "train_batch": 50, "train_kilo": 7},
+    "7":  {"repeats": 800,  "train_batch": 50, "train_kilo": 8},
+    "8":  {"repeats": 1000, "train_batch": 50, "train_kilo": 10},
+    "9":  {"repeats": 1000, "train_batch": 50, "train_kilo": 10},
+    "10": {"repeats": 1000, "train_batch": 50, "train_kilo": 10},
 })
 
 # Medium n (12–18)
 RUN_DEFAULTS_PER_BOARD.update({
-    "12": {"repeats": 1500, "train_batch": 34, "train_kilo": 1},
-    "14": {"repeats": 1700, "train_batch": 34, "train_kilo": 1},
-    "15": {"repeats": 1800, "train_batch": 34, "train_kilo": 1},
-    "16": {"repeats": 1800, "train_batch": 34, "train_kilo": 1},
-    "18": {"repeats": 2000, "train_batch": 34, "train_kilo": 1},
+    "12": {"repeats": 1500, "train_batch": 50, "train_kilo": 4},
+    "14": {"repeats": 1700, "train_batch": 50, "train_kilo": 5},
+    "15": {"repeats": 1800, "train_batch": 50, "train_kilo": 3},
+    "16": {"repeats": 1800, "train_batch": 60, "train_kilo": 4},
+    "18": {"repeats": 2000, "train_batch": 60, "train_kilo": 4},
 })
 
 # Larger n (20–36)
 RUN_DEFAULTS_PER_BOARD.update({
-    "20": {"repeats": 2200, "train_batch": 34, "train_kilo": 1},
-    "24": {"repeats": 2500, "train_batch": 34, "train_kilo": 1},
-    "28": {"repeats": 2800, "train_batch": 40, "train_kilo": 1},
-    "32": {"repeats": 3000, "train_batch": 50, "train_kilo": 1},
-    "36": {"repeats": 3000, "train_batch": 50, "train_kilo": 1},
+    "20": {"repeats": 2200, "train_batch": 60, "train_kilo": 4},
+    "24": {"repeats": 2500, "train_batch": 60, "train_kilo": 4},
+    "28": {"repeats": 2800, "train_batch": 65, "train_kilo": 4},
+    "32": {"repeats": 3000, "train_batch": 80, "train_kilo": 4},
+    "36": {"repeats": 3000, "train_batch": 80, "train_kilo": 4},
 })
 
 # Exposed knobs for exploration and adaptation
@@ -273,9 +273,170 @@ SOFT_RESTART_FRAC = 0.4     # on severe stagnation, replace this fraction of wor
 STORE_CHECKPOINT_BATCHES = 10  # write param_store.json at least every N batches
 
 # Dynamic time limit (optional, per run)
-DYN_TIME_ENABLED_DEFAULT = True  # set True to enable without CLI
-DYN_TIME_BASE_S = 2.0             # initial time budget (seconds) if no --time-limit provided
+DYN_TIME_ENABLED_DEFAULT = True   # set True to enable without CLI
+# Increase default dynamic time window slightly; promising runs can extend
+# within this range when dynamic time is enabled.
+DYN_TIME_BASE_S = 3.0             # initial time budget (seconds) if no --time-limit provided
 DYN_TIME_MIN_S = 0.5              # never drop below this
-DYN_TIME_MAX_S = 10.0             # never exceed this
-DYN_TIME_EXTEND_S = 0.25          # extend when improvement happens
+DYN_TIME_MAX_S = 7.0              # never exceed this
+DYN_TIME_EXTEND_S = 0.5          # extend when improvement happens
 DYN_TIME_SHRINK_S = 0.0           # shrink on stagnation (0 = disabled)
+
+# Optional per-board overrides for dynamic time windows
+from typing import Dict as _Dict
+DYN_TIME_MAX_PER_BOARD: _Dict[str, float] = {
+    # Per-board max caps (override DYN_TIME_MAX_S). Keep within 3–5s window
+    # unless an explicit larger window is desired.
+    # Example override (disabled by default):
+    # "20": 5.0,
+}
+DYN_TIME_BASE_PER_BOARD: _Dict[str, float] = {
+    # Example: "20": 2.0,
+}
+
+def dyn_time_window_for(n: int) -> tuple[float, float]:
+    """Return a recommended (base_s, max_s) dynamic time window for board size n.
+
+    Priority order:
+      1) Explicit per-board overrides in DYN_TIME_BASE_PER_BOARD / DYN_TIME_MAX_PER_BOARD
+      2) Interpolated heuristic based on anchor sizes
+      3) Global defaults (DYN_TIME_BASE_S, DYN_TIME_MAX_S)
+    """
+    try:
+        key = str(int(n))
+    except Exception:
+        key = str(n)
+
+    # 1) Explicit overrides
+    if key in DYN_TIME_BASE_PER_BOARD or key in DYN_TIME_MAX_PER_BOARD:
+        base = float(DYN_TIME_BASE_PER_BOARD.get(key, DYN_TIME_BASE_S))
+        mx = float(DYN_TIME_MAX_PER_BOARD.get(key, DYN_TIME_MAX_S))
+        return base, mx
+
+    # 2) Interpolated heuristic between anchors
+    # Anchors are chosen so that time increases with n
+    anchors: list[tuple[int, tuple[float, float]]] = [
+        (8,  (1.0, 3.0)),
+        (16, (2.0, 6.0)),
+        (24, (3.0, 9.0)),
+        (32, (4.0, 12.0)),
+        (48, (5.0, 15.0)),
+        (64, (6.0, 18.0)),
+        (80, (7.0, 21.0)),
+    ]
+    try:
+        ni = int(n)
+    except Exception:
+        ni = 0
+
+    # Below the smallest anchor → clamp to first
+    if ni <= anchors[0][0]:
+        return anchors[0][1]
+    # Above the largest anchor → clamp to last
+    if ni >= anchors[-1][0]:
+        return anchors[-1][1]
+    # Find surrounding anchors and linearly interpolate
+    lo_idx = 0
+    for i in range(1, len(anchors)):
+        if ni <= anchors[i][0]:
+            lo_idx = i - 1
+            hi_idx = i
+            break
+    n_lo, (base_lo, max_lo) = anchors[lo_idx]
+    n_hi, (base_hi, max_hi) = anchors[hi_idx]
+    span = max(1, n_hi - n_lo)
+    t = (ni - n_lo) / span
+    base = base_lo + t * (base_hi - base_lo)
+    mx = max_lo + t * (max_hi - max_lo)
+    return float(base), float(mx)
+
+# Ensure-solution behavior for single solves
+SOLVE_GUARANTEE_DEFAULT = True  # try extra steps/restarts to reach 0 attacks in normal mode
+SOLVE_MAX_RESTARTS = 3          # additional GA restarts if not solved
+SOLVE_FINAL_STEPS = 2000        # greedy finish steps (min-conflicts style)
+
+# Systematic probe settings (when plateau persists)
+PROBE_PLATEAU_TRIGGER = 10   # batches without acceptance before probing
+PROBE_BATCH_RUNS = 20        # quick probe runs per candidate
+PROBE_COARSE_SCALE = 0.30    # ±30% for pop/gens probes
+PROBE_RATE_STEP = 0.01       # ±0.01 for rates (fine sweep)
+CONFIRM_BATCH_MIN = 50       # confirm with at least this many runs (enables ±0.005 fine rate sweeps)
+
+
+def default_schedule() -> dict:
+    """Return default schedule knobs used inside GA runs.
+
+    These are the parameters the trainer can meta-learn in addition to the
+    baseline GA settings.
+    """
+    return {
+        "adapt_every": ADAPT_EVERY_GEN,
+        "near_thr": ADAPT_NEAR_THRESHOLD,
+        "far_thr": ADAPT_FAR_THRESHOLD,
+        "mut_step_up": ADAPT_MUT_STEP_UP,
+        "mut_step_down": ADAPT_MUT_STEP_DOWN,
+        "immigrant_frac": IMMIGRANT_FRAC,
+        "repair_base_steps": REPAIR_BASE_STEPS,
+        "repair_max_frac": REPAIR_MAX_FRAC,
+        "patience_multiplier": PATIENCE_MULTIPLIER,
+        "max_elitism_frac": MAX_ELITISM_FRAC,
+    }
+
+
+def recommend_schedule(n: int) -> dict:
+    """Return a recommended dynamic schedule for a given board size n.
+
+    If a best_schedule exists for this n in the param store, return it.
+    Otherwise, use the nearest neighbour's best_schedule and lightly scale
+    adapt_every in proportion to n, with sensible clamps. Fall back to
+    default_schedule() if no data exists.
+    """
+    n = int(n)
+    sched = default_schedule()
+    try:
+        # Load store
+        store = _load_param_store()
+        boards = store.get("boards", {})
+        here = boards.get(str(n), {})
+        if isinstance(here.get("best_schedule"), dict):
+            s = dict(here["best_schedule"])  # copy
+            # Ensure required keys exist
+            merged = default_schedule()
+            merged.update(s)
+            return merged
+
+        # Find nearest neighbour with best_schedule
+        candidates = [
+            (abs(int(k) - n), int(k), v)
+            for k, v in boards.items()
+            if isinstance(v, dict) and isinstance(v.get("best_schedule"), dict)
+        ]
+        if not candidates:
+            return sched
+        _, n0, v0 = min(candidates, key=lambda t: t[0])
+        seed = dict(v0["best_schedule"])  # type: ignore[index]
+        merged = default_schedule()
+        merged.update(seed)
+        # Lightly scale adapt_every with n
+        try:
+            scale = max(0.5, min(2.0, n / max(1, n0)))
+            merged["adapt_every"] = int(max(10, min(200, int(merged["adapt_every"]) * scale)))
+        except Exception:
+            pass
+        return merged
+    except Exception:
+        return sched
+
+# Aggressive training settings (adaptive exploration on long plateaus)
+AGGR_ENABLE = True
+AGGR_PLATEAU_L1 = 20        # batches without accept → escalate probes
+AGGR_PLATEAU_L2 = 50        # larger escalation
+AGGR_PROBE_SCALE = 0.50     # coarse scale for pop/gens when escalated
+AGGR_RATE_STEP = 0.02       # larger rate steps when escalated
+AGGR_TIE_MARGIN = 0.02      # allow 2% tie-accept margin when escalated (baseline move only)
+AGGR_MACRO_RESEED = 80      # try macro baseline reseed after this many plateau batches
+AGGR_MACRO_CAND = 3         # number of reseed candidates to try
+
+# Auto-aggression based on total GA runs without improvement (not batches)
+AGGR_AUTO_ENABLE = True
+AGGR_AUTO_RUNS = 1400       # if no accepted improvement in this many runs, escalate aggression

@@ -12,20 +12,27 @@ class Board:
         self.calculate_number_of_attacks()
 
     def calculate_number_of_attacks(self):
+        # O(n) counting using rows and diagonals
+        row_counts = {}
+        diag1_counts = {}  # r - c
+        diag2_counts = {}  # r + c
+        for c, r in enumerate(self.state):
+            row_counts[r] = row_counts.get(r, 0) + 1
+            d1 = r - c
+            d2 = r + c
+            diag1_counts[d1] = diag1_counts.get(d1, 0) + 1
+            diag2_counts[d2] = diag2_counts.get(d2, 0) + 1
+
+        def comb2(x: int) -> int:
+            return x * (x - 1) // 2 if x > 1 else 0
+
         attack_count = 0
-        for i, queen in enumerate(self.state):
-            # Same row →
-            for j in range(i + 1, self.size):
-                if self.state[j] == queen:
-                    attack_count += 1
-            # Upper-right ↗
-            for j in range(i + 1, self.size):
-                if self.state[j] == queen + (j - i):
-                    attack_count += 1
-            # Lower-right ↘
-            for j in range(i + 1, self.size):
-                if self.state[j] == queen - (j - i):
-                    attack_count += 1
+        for cnt in row_counts.values():
+            attack_count += comb2(cnt)
+        for cnt in diag1_counts.values():
+            attack_count += comb2(cnt)
+        for cnt in diag2_counts.values():
+            attack_count += comb2(cnt)
         self.number_of_attacks = attack_count
 
     def max_non_attacking_pairs(self) -> int:
