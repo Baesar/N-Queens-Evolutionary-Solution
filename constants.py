@@ -16,7 +16,7 @@ import json
 from typing import Any, Dict
 
 # Problem constant: default board size
-BOARD_SIZE = 50  # Try 8, 12, 16, 20, 36, ...
+BOARD_SIZE = 8  # Try 8, 12, 16, 20, 36, ...
 
 # Location for persisted parameter improvements
 PARAM_STORE_PATH = Path("params/param_store.json")
@@ -206,7 +206,7 @@ def get_run_defaults(n: int) -> Dict[str, int]:
 # Examples:
 #   TRAIN_MULTI_DEFAULT = "4-8,18"   # trains for n=4,5,6,7,8,18
 #   TRAIN_MULTI_DEFAULT = ""          # no auto multi-n training; BOARD_SIZE is used
-TRAIN_MULTI_DEFAULT: str = ""
+TRAIN_MULTI_DEFAULT: str = "8, 16, 32, 64, 128, 256"
 
 # Pre-filled per-n policies (you can edit these to your needs)
 # Small n (4–10)
@@ -215,7 +215,7 @@ RUN_DEFAULTS_PER_BOARD.update({
     "5":  {"repeats": 600,  "train_batch": 50, "train_kilo": 6},
     "6":  {"repeats": 700,  "train_batch": 50, "train_kilo": 7},
     "7":  {"repeats": 800,  "train_batch": 50, "train_kilo": 8},
-    "8":  {"repeats": 1000, "train_batch": 50, "train_kilo": 10},
+    "8":  {"repeats": 1000, "train_batch": 38, "train_kilo": 10},
     "9":  {"repeats": 1000, "train_batch": 50, "train_kilo": 10},
     "10": {"repeats": 1000, "train_batch": 50, "train_kilo": 10},
 })
@@ -236,6 +236,9 @@ RUN_DEFAULTS_PER_BOARD.update({
     "28": {"repeats": 2800, "train_batch": 65, "train_kilo": 4},
     "32": {"repeats": 3000, "train_batch": 80, "train_kilo": 4},
     "36": {"repeats": 3000, "train_batch": 80, "train_kilo": 4},
+    "64": {"repeats": 5000, "train_batch": 80, "train_kilo": 5},
+    "128": {"repeats": 5000, "train_batch": 90, "train_kilo": 5},
+    "256": {"repeats": 5000, "train_batch": 100, "train_kilo": 5},
 })
 
 # Exposed knobs for exploration and adaptation
@@ -247,8 +250,8 @@ EXPLORE_PROB_REWARD = 0.05   # increase when an improvement is accepted
 EXPLORE_PROB_COOL = 0.01     # decrease when no improvement
 
 # Acceptance thresholds for improvements (relative)
-ACCEPT_MEDIAN_IMPROVEMENT = 0.01  # 1% faster median time
-ACCEPT_ATTACKS_IMPROVEMENT = 0.03 # 3% fewer average attacks
+ACCEPT_MEDIAN_IMPROVEMENT = 0.005  # 1% faster median time
+ACCEPT_ATTACKS_IMPROVEMENT = 0.015 # 3% fewer average attacks
 
 # In-run adaptation cadence and magnitudes
 ADAPT_EVERY_GEN = 40
@@ -323,6 +326,8 @@ def dyn_time_window_for(n: int) -> tuple[float, float]:
         (48, (5.0, 15.0)),
         (64, (6.0, 18.0)),
         (80, (7.0, 21.0)),
+        (100, (25.0, 40.0)),
+        (260, (355.0, 700.0)),
     ]
     try:
         ni = int(n)
@@ -432,11 +437,11 @@ AGGR_ENABLE = True
 AGGR_PLATEAU_L1 = 20        # batches without accept → escalate probes
 AGGR_PLATEAU_L2 = 50        # larger escalation
 AGGR_PROBE_SCALE = 0.50     # coarse scale for pop/gens when escalated
-AGGR_RATE_STEP = 0.02       # larger rate steps when escalated
-AGGR_TIE_MARGIN = 0.02      # allow 2% tie-accept margin when escalated (baseline move only)
+AGGR_RATE_STEP = 0.01       # larger rate steps when escalated
+AGGR_TIE_MARGIN = 0.01      # allow 2% tie-accept margin when escalated (baseline move only)
 AGGR_MACRO_RESEED = 80      # try macro baseline reseed after this many plateau batches
 AGGR_MACRO_CAND = 3         # number of reseed candidates to try
 
 # Auto-aggression based on total GA runs without improvement (not batches)
 AGGR_AUTO_ENABLE = True
-AGGR_AUTO_RUNS = 1400       # if no accepted improvement in this many runs, escalate aggression
+AGGR_AUTO_RUNS = 800       # if no accepted improvement in this many runs, escalate aggression
